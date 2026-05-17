@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ArrowUp } from 'lucide-react'
 import { ExampleChips } from './example-chips'
 import { Message, type ChatMessage, type ToolCall } from './message'
@@ -100,6 +101,16 @@ export function Chat() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const searchParams = useSearchParams()
+  const newKey = searchParams?.get('new') ?? null
+
+  useEffect(() => {
+    if (!newKey) return
+    setMessages([])
+    setInput('')
+    setLoading(false)
+    setConfirmingId(null)
+  }, [newKey])
 
   const onConfirmSwap = useCallback(
     async (toolCallId: string, toolName: string, rawInput: unknown) => {
