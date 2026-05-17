@@ -1,0 +1,126 @@
+import { NextResponse } from 'next/server'
+import type { Address } from 'viem'
+import { executeSwap, type SwapArgs } from '@/ai/tools/swap'
+import { executeSend, type SendArgs } from '@/ai/tools/send'
+import { executeBridge, type BridgeArgs } from '@/ai/tools/bridge'
+import { getPortfolio, type PortfolioArgs } from '@/ai/tools/portfolio'
+import { addLiquidity, type AddLiquidityArgs } from '@/ai/tools/add-liquidity'
+import { removeLiquidity, type RemoveLiquidityArgs } from '@/ai/tools/remove-liquidity'
+import { getLpPositions } from '@/ai/tools/lp-positions'
+import { deposit, type DepositArgs } from '@/ai/tools/deposit'
+import { withdraw, type WithdrawArgs } from '@/ai/tools/withdraw'
+import { getPrices, type GetPricesArgs } from '@/ai/tools/prices'
+import { getYield, type GetYieldArgs } from '@/ai/tools/yield'
+import { getTrending } from '@/ai/tools/trending'
+
+export const runtime = 'nodejs'
+
+type ToolName =
+  | 'swap'
+  | 'send'
+  | 'bridge'
+  | 'getPortfolio'
+  | 'add_liquidity'
+  | 'remove_liquidity'
+  | 'get_lp_positions'
+  | 'deposit'
+  | 'withdraw'
+  | 'get_prices'
+  | 'get_yield'
+  | 'get_trending'
+
+interface ToolRequest {
+  tool: ToolName
+  args: Record<string, unknown>
+  address?: Address
+}
+
+const VALID_TOOLS: readonly ToolName[] = [
+  'swap',
+  'send',
+  'bridge',
+  'getPortfolio',
+  'add_liquidity',
+  'remove_liquidity',
+  'get_lp_positions',
+  'deposit',
+  'withdraw',
+  'get_prices',
+  'get_yield',
+  'get_trending',
+]
+
+function isToolName(value: unknown): value is ToolName {
+  return typeof value === 'string' && (VALID_TOOLS as readonly string[]).includes(value)
+}
+
+function badRequest(error: string): NextResponse {
+  return NextResponse.json({ ok: false, error }, { status: 400 })
+}
+
+export async function POST(req: Request): Promise<NextResponse> {
+  let body: ToolRequest
+  try {
+    body = (await req.json()) as ToolRequest
+  } catch {
+    return badRequest('Invalid JSON body')
+  }
+
+  if (!isToolName(body.tool)) return badRequest('Unknown tool')
+  if (!body.args || typeof body.args !== 'object') return badRequest('Missing args')
+
+  try {
+    switch (body.tool) {
+      case 'swap':
+        return NextResponse.json(await executeSwap(body.args as unknown as SwapArgs))
+      case 'send':
+        return NextResponse.json(await executeSend(body.args as unknown as SendArgs))
+      case 'bridge':
+        return NextResponse.json(await executeBridge(body.args as unknown as BridgeArgs))
+      case 'getPortfolio': {
+        const args = body.args as unknown as PortfolioArgs
+        const address = (args.address ?? body.address) as Address | undefined
+        if (!address) return badRequest('address is required for portfolio')
+        return NextResponse.json(await getPortfolio({ address, chainId: args.chainId }))
+      }
+      case 'add_liquidity': {
+        const args = body.args as unknown as AddLiquidityArgs
+        const recipient = (body.address ?? args.recipient) as Address | undefined
+        return NextResponse.json(await addLiquidity({ ...args, recipient }))
+      }
+      case 'remove_liquidity':
+        return NextResponse.json(
+          await removeLiquidity(body.args as unknown as RemoveLiquidityArgs),
+        )
+      case 'get_lp_positions': {
+        const address = body.address as Address | undefined
+        if (!address) return badRequest('address required')
+        return NextResponse.json(await getLpPositions({ address }))
+      }
+      case 'deposit': {
+        const args = body.args as unknown as DepositArgs
+        const recipient = (body.address ?? args.recipient) as Address | undefined
+        return NextResponse.json(await deposit({ ...args, recipient }))
+      }
+      case 'withdraw': {
+        const args = body.args as unknown as WithdrawArgs
+        const recipient = (body.address ?? args.recipient) as Address | undefined
+        return NextResponse.json(await withdraw({ ...args, recipient }))
+      }
+      case 'get_prices': {
+        const args = body.args as unknown as GetPricesArgs
+        return NextResponse.json(await getPrices(args))
+      }
+      case 'get_yield': {
+        const args = body.args as unknown as GetYieldArgs
+        return NextResponse.json(await getYield(args))
+      }
+      case 'get_trending': {
+        return NextResponse.json(await getTrending())
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown server error'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
+}

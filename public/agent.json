@@ -1,0 +1,17 @@
+{
+  "name": "Arcwise",
+  "description": "AI crypto copilot on Arc, Circle's stablecoin L1. Chat-driven swap, send, bridge, yield, and portfolio actions with USDC-native gas and ERC-8183 job escrow.",
+  "image": "/logo.png",
+  "endpoints": {
+    "chat": "https://arcwise.app/api/chat"
+  },
+  "capabilities": [
+    "swap",
+    "send",
+    "bridge",
+    "yield",
+    "portfolio"
+  ],
+  "chainId": 5042002,
+  "agentId": 0
+}

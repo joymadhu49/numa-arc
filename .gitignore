@@ -1,0 +1,16 @@
+node_modules
+.next
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+dist
+out
+
+# Local-only dev notes
+session-summary.md
+PLAN.md
+.deploy-key

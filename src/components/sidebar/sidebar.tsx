@@ -1,0 +1,96 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { History, Home, PieChart, Settings, Bot, Send, Twitter } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface NavItem {
+  href: string
+  label: string
+  icon: LucideIcon
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { href: '/', label: 'Home', icon: Home },
+  { href: '/portfolio', label: 'Portfolio', icon: PieChart },
+  { href: '/agent', label: 'Agent', icon: Bot },
+  { href: '/history', label: 'History', icon: History },
+  { href: '/settings', label: 'Settings', icon: Settings },
+]
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/'
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+export function Sidebar() {
+  const pathname = usePathname() ?? '/'
+
+  return (
+    <aside className="flex h-screen w-16 shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 md:w-60">
+      <div className="flex h-14 items-center justify-center border-b border-neutral-800 px-3 md:justify-start">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-neutral-100"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/numa-logo.svg" alt="Numa" className="h-10 w-10 shrink-0" />
+          <span className="hidden text-2xl font-extrabold tracking-tight md:inline">Numa</span>
+        </Link>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2 py-3 min-h-0">
+        <ul className="flex flex-col gap-1">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon
+            const active = isActive(pathname, item.href)
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors',
+                    active
+                      ? 'bg-white text-neutral-900'
+                      : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100',
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      'h-4 w-4 shrink-0',
+                      active ? 'text-neutral-900' : 'text-neutral-500 group-hover:text-neutral-200',
+                    )}
+                  />
+                  <span className="hidden md:inline">{item.label}</span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+
+      <div className="flex items-center gap-3 border-t border-neutral-800 px-4 py-3">
+        <a
+          href="https://x.com"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="X / Twitter"
+          className="text-neutral-400 transition-colors hover:text-white"
+        >
+          <Twitter className="h-5 w-5" />
+        </a>
+        <a
+          href="https://t.me"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Telegram"
+          className="text-neutral-400 transition-colors hover:text-white"
+        >
+          <Send className="h-5 w-5" />
+        </a>
+      </div>
+    </aside>
+  )
+}
