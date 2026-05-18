@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Github, History, Home, PieChart, Settings, Bot, Twitter } from 'lucide-react'
+import { Github, History, Home, PieChart, Settings, Bot, Send, Twitter } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -103,6 +103,15 @@ export function Sidebar() {
           className="text-neutral-400 transition-colors hover:text-white"
         >
           <Github className="h-5 w-5" />
+        </a>
+        <a
+          href="https://t.me/joy_madhu"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Telegram"
+          className="text-neutral-400 transition-colors hover:text-white"
+        >
+          <Send className="h-5 w-5" />
         </a>
       </div>
     </aside>
