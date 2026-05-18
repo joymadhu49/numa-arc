@@ -1,6 +1,11 @@
-# Numa
+<p align="center">
+  <img src="public/numa-logo.svg" alt="Numa" width="120" />
+</p>
 
-> AI stablecoin DeFi copilot on Arc — Circle's stablecoin Layer 1.
+<h1 align="center">Numa</h1>
+
+<p align="center"><em>AI stablecoin DeFi copilot on Arc — Circle's stablecoin Layer 1.</em></p>
+
 
 Numa turns DeFi into a conversation. Ask in plain English: swap, send, bridge across chains via CCTP, check yields, scan tokens, read your portfolio, mint a soulbound on-chain agent identity. All routed through Arc's USDC-native rails with sub-second finality.
 
@@ -68,27 +73,9 @@ npm run dev
 
 Open <http://localhost:3000>.
 
-### Environment variables
+### Environment
 
-Create `.env` in the project root:
-
-```env
-OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=openai/gpt-4o
-
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_wc_project_id
-NEXT_PUBLIC_ARC_RPC=https://rpc.testnet.arc.network
-NEXT_PUBLIC_ARC_CHAIN_ID=5042002
-NEXT_PUBLIC_ARC_EXPLORER=https://testnet.arcscan.app
-NEXT_PUBLIC_KIT_KEY=KIT_KEY:...
-
-NEXT_PUBLIC_ARC_USDC=0x3600000000000000000000000000000000000000
-NEXT_PUBLIC_ARC_EURC=0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a
-
-NEXT_PUBLIC_NUMA_AGENT_NFT=0x2ffd7da9b099cd1abb60149c347caf34b39f026f
-```
-
-> **Never commit `DEPLOYER_PRIVATE_KEY`.** Used only by `scripts/deploy-numa-agent.mjs` and only locally.
+Configure your local `.env` with OpenRouter, WalletConnect, Arc RPC / explorer, Circle App Kit key, token addresses (USDC, EURC), and the deployed `NEXT_PUBLIC_NUMA_AGENT_NFT` contract address. Never commit `DEPLOYER_PRIVATE_KEY` — it is only used locally by `scripts/deploy-numa-agent.mjs`.
 
 ---
 
