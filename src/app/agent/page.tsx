@@ -8,19 +8,19 @@ export default function AgentPage() {
   const contract = process.env.NEXT_PUBLIC_NUMA_AGENT_NFT ?? null
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold">Numa Agent Identity</h1>
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+      <header className="mb-6 sm:mb-8">
+        <h1 className="text-xl font-semibold sm:text-2xl">Numa Agent Identity</h1>
         <p className="text-sm text-neutral-400">
           On-chain soulbound NFT on Arc Testnet (chainId {arcTestnet.id}).
         </p>
       </header>
 
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <AgentProfile />
       </div>
 
-      <section className="rounded-2xl border border-neutral-800 p-5">
+      <section className="rounded-2xl border border-neutral-800 p-4 sm:p-5">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-neutral-400">
           NumaAgent contract
         </h2>
@@ -43,7 +43,7 @@ export default function AgentPage() {
         ) : (
           <p className="text-sm text-neutral-500">
             Contract not deployed yet. Run{' '}
-            <code className="rounded bg-neutral-900 px-1.5 py-0.5">
+            <code className="break-all rounded bg-neutral-900 px-1.5 py-0.5">
               DEPLOYER_PRIVATE_KEY=0x... npm run deploy:numa-agent
             </code>
             .
@@ -56,9 +56,9 @@ export default function AgentPage() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-neutral-500">{label}</dt>
-      <dd className="break-all text-right font-mono text-xs text-neutral-200">{value}</dd>
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+      <dt className="shrink-0 text-neutral-500">{label}</dt>
+      <dd className="break-all font-mono text-xs text-neutral-200 sm:text-right">{value}</dd>
     </div>
   )
 }

@@ -60,7 +60,7 @@ function renderInline(text: string): ReactNode[] {
       nodes.push(
         <code
           key={`c-${key++}`}
-          className="rounded bg-neutral-800 px-1 py-0.5 font-mono text-[0.85em] text-neutral-100"
+          className="rounded bg-neutral-800 px-1 py-0.5 font-mono text-[0.85em] break-all text-neutral-100"
         >
           {token.slice(1, -1)}
         </code>,
@@ -278,23 +278,23 @@ function SuccessSwapBanner({ tc }: { tc: ToolCall }) {
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 p-3">
       <div className="flex items-center gap-2">
-        <PartyPopper className="h-4 w-4 text-neutral-100" />
+        <PartyPopper className="h-4 w-4 shrink-0 text-neutral-100" />
         <span className="text-sm font-semibold text-neutral-100">Done. {headline}</span>
       </div>
-      <div className="mt-2 flex items-baseline gap-2 text-sm">
-        <span className="font-mono text-neutral-100">{subline.left}</span>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <span className="font-mono break-all text-neutral-100">{subline.left}</span>
         {subline.arrow ? <span className="text-neutral-500">{subline.arrow}</span> : null}
-        {subline.right ? <span className="font-mono text-neutral-100">{subline.right}</span> : null}
+        {subline.right ? <span className="font-mono break-all text-neutral-100">{subline.right}</span> : null}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
-        <span className="font-mono text-neutral-400">{hash.slice(0, 14)}…{hash.slice(-6)}</span>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+        <span className="font-mono break-all text-neutral-400">{hash.slice(0, 14)}…{hash.slice(-6)}</span>
         <a
           href={explorer}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800 px-2.5 py-1 font-medium text-neutral-100 transition hover:bg-neutral-700"
+          className="inline-flex min-h-[36px] items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800 px-2.5 py-1 font-medium text-neutral-100 transition hover:bg-neutral-700"
         >
-          <ExternalLink className="h-3 w-3" /> View on Arcscan
+          <ExternalLink className="h-3 w-3 shrink-0" /> View on Arcscan
         </a>
       </div>
     </div>
@@ -328,11 +328,11 @@ function ToolCallCard({
   }
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2">
-        {icon}
-        <Wrench className="h-3.5 w-3.5 text-neutral-500" />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="shrink-0">{icon}</span>
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
         <span className="font-medium text-neutral-100">{actionLabel(tc.name)}</span>
-        {summary ? <span className="text-neutral-400">— {summary}</span> : null}
+        {summary ? <span className="break-all text-neutral-400">— {summary}</span> : null}
       </div>
       {status === 'error' && tc.error ? (
         <div className="mt-1.5 rounded bg-red-950/40 px-2 py-1 text-[11px] text-red-300">
@@ -348,7 +348,7 @@ function ToolCallCard({
             type="button"
             disabled={confirmingId === tc.id}
             onClick={() => onConfirmSwap(tc.id, tc.name, tc.input)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 shadow-sm transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-white px-3 py-2 text-xs font-medium text-neutral-900 shadow-sm transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
           >
             {confirmingId === tc.id ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -362,9 +362,9 @@ function ToolCallCard({
           href={getExplorer(tc) ?? '#'}
           target="_blank"
           rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-[11px] text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white hover:decoration-neutral-300"
+          className="mt-2 inline-flex items-center gap-1 break-all text-[11px] text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white hover:decoration-neutral-300"
         >
-          <ExternalLink className="h-3 w-3" />
+          <ExternalLink className="h-3 w-3 shrink-0" />
           {getHash(tc)?.slice(0, 10)}…
         </a>
       ) : null}
@@ -389,8 +389,8 @@ export function Message({ message, onConfirmSwap, confirmingId }: MessageProps) 
       <div
         className={
           isUser
-            ? 'max-w-[80%] rounded-2xl rounded-br-sm bg-neutral-100 px-4 py-3 text-sm text-neutral-900'
-            : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-neutral-900/80 px-4 py-3 text-sm text-neutral-100 ring-1 ring-neutral-800'
+            ? 'max-w-[92%] break-words rounded-2xl rounded-br-sm bg-neutral-100 px-3 py-2.5 text-sm text-neutral-900 sm:max-w-[80%] sm:px-4 sm:py-3'
+            : 'max-w-[95%] break-words rounded-2xl rounded-bl-sm bg-neutral-900/80 px-3 py-2.5 text-sm text-neutral-100 ring-1 ring-neutral-800 sm:max-w-[85%] sm:px-4 sm:py-3'
         }
       >
         <div className="space-y-2">{renderContent(message.content)}</div>

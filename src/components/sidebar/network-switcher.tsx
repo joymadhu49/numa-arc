@@ -103,16 +103,16 @@ export function NetworkSwitcher() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={!isConnected}
-        className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950 px-2.5 py-1 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-2.5"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={current.logo} alt={current.name} className="h-4 w-4 rounded-full" />
-        <span className="uppercase tracking-wider">{current.short}</span>
+        <span className="hidden uppercase tracking-wider sm:inline">{current.short}</span>
         <ChevronDown className="h-3 w-3 text-neutral-400" />
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-2 w-56 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 shadow-lg">
           <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-neutral-500">
             Switch network
           </div>

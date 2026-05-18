@@ -355,14 +355,16 @@ export function Chat() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-neutral-950 text-neutral-100">
-      <header className="flex items-center justify-between border-b border-neutral-900 px-6 py-3">
-        <div className="flex items-baseline gap-3">
+      <header className="flex items-center justify-between gap-2 border-b border-neutral-900 px-3 py-3 sm:px-6">
+        <div className="flex min-w-0 items-baseline gap-3">
           <span className="text-base font-semibold tracking-tight text-neutral-50">Numa</span>
-          <span className="text-xs text-neutral-500">stablecoin copilot on Arc</span>
+          <span className="hidden truncate text-xs text-neutral-500 sm:inline">
+            stablecoin copilot on Arc
+          </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <NetworkSwitcher />
-          <div className="w-44">
+          <div className="w-auto sm:w-44">
             <WalletPill />
           </div>
         </div>
@@ -374,13 +376,13 @@ export function Chat() {
             <div />
           </AuthGate>
         ) : (
-        <div className="mx-auto w-full max-w-2xl px-4 py-6">
+        <div className="mx-auto w-full max-w-2xl px-3 py-5 sm:px-4 sm:py-6">
           {empty ? (
-            <div className="flex flex-col items-start gap-5 pt-10">
-              <h1 className="text-2xl font-semibold tracking-tight text-neutral-50">
+            <div className="flex flex-col items-start gap-4 pt-6 sm:gap-5 sm:pt-10">
+              <h1 className="text-xl font-semibold tracking-tight text-neutral-50 sm:text-2xl">
                 Welcome to Numa — the simplest way to use DeFi on Arc.
               </h1>
-              <div className="space-y-4 text-sm leading-relaxed text-neutral-300">
+              <div className="space-y-3 text-sm leading-relaxed text-neutral-300 sm:space-y-4">
                 <p>
                   New to Arc? You can ask me anything. Remember I&apos;m an AI, I don&apos;t judge.
                   Whenever you&apos;re ready, I&apos;m here to help you do transactions with ease and
@@ -390,7 +392,7 @@ export function Chat() {
                   Already a pro? You are about to experience a stablecoin-native L1 with USDC gas
                   and sub-second finality. You can also bridge in from:
                 </p>
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-neutral-200">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-200 sm:gap-x-5">
                   <span className="inline-flex items-center gap-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -443,10 +445,10 @@ export function Chat() {
       </div>
 
       <div className="border-t border-neutral-900 bg-neutral-950">
-        <div className="mx-auto w-full max-w-2xl px-4 py-4">
+        <div className="mx-auto w-full max-w-2xl px-3 py-3 sm:px-4 sm:py-4">
           <form
             onSubmit={onSubmit}
-            className="flex items-end gap-2 rounded-2xl border border-neutral-800 bg-neutral-900 px-3 py-2 focus-within:border-neutral-700 focus-within:ring-1 focus-within:ring-neutral-700"
+            className="flex items-end gap-2 rounded-2xl border border-neutral-800 bg-neutral-900 px-2 py-2 focus-within:border-neutral-700 focus-within:ring-1 focus-within:ring-neutral-700 sm:px-3"
           >
             <textarea
               ref={textareaRef}

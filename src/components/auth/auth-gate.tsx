@@ -15,8 +15,8 @@ export function AuthGate({ children }: AuthGateProps) {
   if (auth.signedIn) return <>{children}</>
 
   return (
-    <div className="flex h-full min-h-[60vh] items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 shadow-lg">
+    <div className="flex h-full min-h-[60vh] items-center justify-center px-3 sm:px-4">
+      <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 shadow-lg sm:p-6">
         <div className="mb-4 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-neutral-300" />
           <h2 className="text-lg font-semibold text-neutral-50">Sign in to Numa</h2>

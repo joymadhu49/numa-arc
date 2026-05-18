@@ -160,8 +160,8 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
 
   return (
     <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60">
-      <div className="grid gap-5 p-5 md:grid-cols-[200px_1fr]">
-        <div className="relative">
+      <div className="grid gap-4 p-4 sm:gap-5 sm:p-5 md:grid-cols-[200px_1fr]">
+        <div className="relative mx-auto w-full max-w-[180px] md:max-w-none">
           <div className="grid aspect-square w-full place-items-center rounded-xl bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -175,15 +175,15 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
             onClick={reroll}
             disabled={minting || minted !== null}
             aria-label="Reroll character"
-            className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-neutral-950/80 text-white backdrop-blur transition hover:bg-neutral-800 disabled:opacity-50"
+            className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-neutral-950/80 text-white backdrop-blur transition hover:bg-neutral-800 disabled:opacity-50"
           >
             <Shuffle className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div>
-            <h3 className="text-xl font-bold tracking-tight text-white">{agent.name}</h3>
+            <h3 className="break-words text-lg font-bold tracking-tight text-white sm:text-xl">{agent.name}</h3>
             <p className="mt-1 text-xs text-neutral-400">
               Numa Agent — on-chain attestation on Arc Testnet. Unlimited supply. Each
               character is unique and bound to your wallet via a soulbound mint tx.
@@ -221,19 +221,19 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
                 <Sparkles className="h-4 w-4" />
                 Minted on-chain. {minted.name} is yours.
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-[11px]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px]">
                 <a
                   href={minted.explorerUrl ?? '#'}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
+                  className="inline-flex min-h-[36px] items-center gap-1 break-all text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
                 >
-                  <ExternalLink className="h-3 w-3" />
+                  <ExternalLink className="h-3 w-3 shrink-0" />
                   {minted.txHash?.slice(0, 14)}…
                 </a>
                 <a
                   href="/agent"
-                  className="inline-flex items-center gap-1 text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
+                  className="inline-flex min-h-[36px] items-center gap-1 text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
                 >
                   View profile
                 </a>

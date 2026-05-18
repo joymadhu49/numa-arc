@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { Providers } from '@/components/providers'
 import { Sidebar } from '@/components/sidebar/sidebar'
@@ -9,6 +9,12 @@ export const metadata: Metadata = {
   description: 'Numa — the stablecoin DeFi copilot on Arc.',
 }
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="dark">
@@ -16,7 +22,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Providers>
           <div className="flex min-h-screen">
             <Sidebar />
-            <main className="flex-1 overflow-x-hidden">{children}</main>
+            <main className="min-w-0 flex-1 overflow-x-hidden">{children}</main>
           </div>
         </Providers>
       </body>

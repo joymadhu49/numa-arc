@@ -35,18 +35,18 @@ export function AgentProfile() {
 
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/40">
-      <div className="grid gap-6 p-6 md:grid-cols-[240px_1fr]">
-        <div className="aspect-square w-full overflow-hidden rounded-2xl bg-white">
+      <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-[240px_1fr]">
+        <div className="mx-auto aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl bg-white md:max-w-none">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={agent.imageUrl} alt={agent.name} className="h-full w-full" />
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-neutral-500">
               Numa Agent
             </p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-white">
+            <h2 className="mt-1 break-words text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {agent.name}
             </h2>
           </div>
@@ -95,9 +95,9 @@ export function AgentProfile() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-      <dt className="text-neutral-500">{label}</dt>
-      <dd className="truncate text-right font-mono text-neutral-200">{value}</dd>
+    <div className="flex min-w-0 items-baseline justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+      <dt className="shrink-0 text-neutral-500">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-mono text-neutral-200">{value}</dd>
     </div>
   )
 }
