@@ -379,10 +379,10 @@ export function Chat() {
         <div className="mx-auto w-full max-w-2xl px-3 py-5 sm:px-4 sm:py-6">
           {empty ? (
             <div className="flex flex-col items-start gap-4 pt-6 sm:gap-5 sm:pt-10">
-              <h1 className="text-xl font-semibold tracking-tight text-neutral-50 sm:text-2xl">
+              <h1 className="text-lg font-semibold tracking-tight text-neutral-50 sm:text-2xl">
                 Welcome to Numa — the simplest way to use DeFi on Arc.
               </h1>
-              <div className="space-y-3 text-sm leading-relaxed text-neutral-300 sm:space-y-4">
+              <div className="space-y-3 text-xs leading-relaxed text-neutral-300 sm:space-y-4 sm:text-sm">
                 <p>
                   New to Arc? You can ask me anything. Remember I&apos;m an AI, I don&apos;t judge.
                   Whenever you&apos;re ready, I&apos;m here to help you do transactions with ease and
@@ -392,13 +392,13 @@ export function Chat() {
                   Already a pro? You are about to experience a stablecoin-native L1 with USDC gas
                   and sub-second finality. You can also bridge in from:
                 </p>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-200 sm:gap-x-5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-neutral-200 sm:gap-x-5 sm:text-sm">
                   <span className="inline-flex items-center gap-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="https://pbs.twimg.com/profile_images/1955238194443849732/sHyVRItm_400x400.jpg"
                       alt="Arc"
-                      className="h-6 w-6 rounded-full"
+                      className="h-5 w-5 rounded-full sm:h-6 sm:w-6"
                     />
                     Arc Testnet
                   </span>
@@ -407,7 +407,7 @@ export function Chat() {
                     <img
                       src="https://coin-images.coingecko.com/coins/images/279/large/ethereum.png?1696501628"
                       alt="Ethereum"
-                      className="h-6 w-6 rounded-full"
+                      className="h-5 w-5 rounded-full sm:h-6 sm:w-6"
                     />
                     Ethereum Sepolia
                   </span>
@@ -416,13 +416,13 @@ export function Chat() {
                     <img
                       src="https://pbs.twimg.com/profile_images/1945608199500910592/rnk6ixxH_400x400.jpg"
                       alt="Base"
-                      className="h-6 w-6 rounded-full"
+                      className="h-5 w-5 rounded-full sm:h-6 sm:w-6"
                     />
                     Base Sepolia
                   </span>
                 </div>
               </div>
-              <div className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2.5 text-xs text-neutral-300">
+              <div className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-[11px] leading-relaxed text-neutral-300 sm:py-2.5 sm:text-xs">
                 <span className="font-medium text-neutral-200">Warning:</span> Only bridge USDC
                 from the supported source chains above. Other chains are not routed.
               </div>

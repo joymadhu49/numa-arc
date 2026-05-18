@@ -20,9 +20,9 @@ const EXAMPLES: readonly string[] = [
 
 export function ExampleChips({ onPick, disabled = false }: ExampleChipsProps) {
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 px-4 py-4 sm:px-5">
-      <p className="mb-3 text-sm text-neutral-300">Try an example:</p>
-      <ul className="space-y-2">
+    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 px-3 py-3 sm:px-5 sm:py-4">
+      <p className="mb-2 text-xs text-neutral-300 sm:mb-3 sm:text-sm">Try an example:</p>
+      <ul className="space-y-1.5 sm:space-y-2">
         {EXAMPLES.map((ex) => (
           <li
             key={ex}
@@ -32,7 +32,7 @@ export function ExampleChips({ onPick, disabled = false }: ExampleChipsProps) {
               type="button"
               disabled={disabled}
               onClick={() => onPick(ex)}
-              className="break-words text-left text-sm text-neutral-200 underline decoration-neutral-600 decoration-1 underline-offset-4 transition hover:text-white hover:decoration-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="break-words text-left text-xs text-neutral-200 underline decoration-neutral-600 decoration-1 underline-offset-4 transition hover:text-white hover:decoration-neutral-300 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
             >
               {ex}
             </button>
