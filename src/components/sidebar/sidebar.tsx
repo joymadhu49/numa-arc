@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { History, Home, PieChart, Settings, Bot, Send, Twitter } from 'lucide-react'
+import { Github, History, Home, PieChart, Settings, Bot, Twitter } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -87,7 +87,7 @@ export function Sidebar() {
 
       <div className="flex items-center gap-3 border-t border-neutral-800 px-4 py-3">
         <a
-          href="https://x.com"
+          href="https://x.com/zx_joy_"
           target="_blank"
           rel="noreferrer"
           aria-label="X / Twitter"
@@ -96,13 +96,13 @@ export function Sidebar() {
           <Twitter className="h-5 w-5" />
         </a>
         <a
-          href="https://t.me"
+          href="https://github.com/joymadhu49/numa-arc"
           target="_blank"
           rel="noreferrer"
-          aria-label="Telegram"
+          aria-label="GitHub repository"
           className="text-neutral-400 transition-colors hover:text-white"
         >
-          <Send className="h-5 w-5" />
+          <Github className="h-5 w-5" />
         </a>
       </div>
     </aside>
