@@ -1,9 +1,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import Image from 'next/image'
 import { CheckCircle2, ExternalLink, Loader2, PartyPopper, XCircle, Wrench } from 'lucide-react'
 import { MintAgentCard } from './mint-agent-card'
+import { NumaAvatar } from './numa-avatar'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -393,21 +393,6 @@ function ToolCallCard({
   )
 }
 
-function NumaAvatar() {
-  return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full bg-neutral-900 ring-1 ring-neutral-700 sm:h-9 sm:w-9">
-      <Image
-        src="/numa-logo.svg"
-        alt="Numa"
-        width={22}
-        height={22}
-        className="h-5 w-5 sm:h-[22px] sm:w-[22px]"
-        priority
-      />
-    </div>
-  )
-}
-
 function TypingIndicator({ message }: { message: ChatMessage }) {
   const activeTool = message.toolCalls?.find((tc) => (tc.status ?? 'pending') === 'pending')
   const label = activeTool ? `Using ${actionLabel(activeTool.name)}` : 'Thinking'
@@ -443,9 +428,11 @@ export function Message({ message, onConfirmSwap, confirmingId }: MessageProps) 
     )
   }
 
+  const hasPendingTool = message.toolCalls?.some((tc) => (tc.status ?? 'pending') === 'pending') ?? false
+  const isActive = (message.pending ?? false) || hasPendingTool
   return (
     <div className="flex justify-start gap-2 sm:gap-3">
-      <NumaAvatar />
+      <NumaAvatar active={isActive} size={36} />
       <div className="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1.5 sm:max-w-[calc(85%-2.75rem)]">
         {showTyping ? (
           <div className="rounded-2xl rounded-bl-sm bg-neutral-900/80 px-3 py-2.5 ring-1 ring-neutral-800 sm:px-4 sm:py-3">
