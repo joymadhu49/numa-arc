@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import Image from 'next/image'
 import { CheckCircle2, ExternalLink, Loader2, PartyPopper, XCircle, Wrench } from 'lucide-react'
 import { MintAgentCard } from './mint-agent-card'
 
@@ -326,12 +327,22 @@ function ToolCallCard({
   if (EXECUTABLE_TOOLS.has(tc.name) && isBroadcast(tc)) {
     return <SuccessSwapBanner tc={tc} />
   }
+  const pending = status === 'pending'
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-xs">
+    <div
+      className={
+        'rounded-lg border px-3 py-2 text-xs transition ' +
+        (pending
+          ? 'animate-pulse border-neutral-700 bg-neutral-900/80'
+          : 'border-neutral-800 bg-neutral-950/70')
+      }
+    >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="shrink-0">{icon}</span>
         <Wrench className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-        <span className="font-medium text-neutral-100">{actionLabel(tc.name)}</span>
+        <span className="font-medium text-neutral-100">
+          {pending ? `Calling ${actionLabel(tc.name)}…` : actionLabel(tc.name)}
+        </span>
         {summary ? <span className="break-all text-neutral-400">— {summary}</span> : null}
       </div>
       {status === 'error' && tc.error ? (
@@ -382,20 +393,72 @@ function ToolCallCard({
   )
 }
 
+function NumaAvatar() {
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full bg-neutral-900 ring-1 ring-neutral-700 sm:h-9 sm:w-9">
+      <Image
+        src="/numa-logo.svg"
+        alt="Numa"
+        width={22}
+        height={22}
+        className="h-5 w-5 sm:h-[22px] sm:w-[22px]"
+        priority
+      />
+    </div>
+  )
+}
+
+function TypingIndicator({ message }: { message: ChatMessage }) {
+  const activeTool = message.toolCalls?.find((tc) => (tc.status ?? 'pending') === 'pending')
+  const label = activeTool ? `Using ${actionLabel(activeTool.name)}` : 'Thinking'
+  return (
+    <div className="inline-flex items-center gap-2 text-xs text-neutral-400">
+      {activeTool ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-neutral-300" />
+      ) : null}
+      <span className="font-medium tracking-wide">{label}</span>
+      <span className="inline-flex items-center gap-1">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-400" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-400 [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-400 [animation-delay:300ms]" />
+      </span>
+    </div>
+  )
+}
+
 export function Message({ message, onConfirmSwap, confirmingId }: MessageProps) {
   const isUser = message.role === 'user'
+  const showTyping =
+    message.pending &&
+    message.content.length === 0 &&
+    !message.toolCalls?.length
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[92%] break-words rounded-2xl rounded-br-sm bg-neutral-100 px-3 py-2.5 text-sm text-neutral-900 sm:max-w-[80%] sm:px-4 sm:py-3">
+          <div className="space-y-2">{renderContent(message.content)}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
-      <div
-        className={
-          isUser
-            ? 'max-w-[92%] break-words rounded-2xl rounded-br-sm bg-neutral-100 px-3 py-2.5 text-sm text-neutral-900 sm:max-w-[80%] sm:px-4 sm:py-3'
-            : 'max-w-[95%] break-words rounded-2xl rounded-bl-sm bg-neutral-900/80 px-3 py-2.5 text-sm text-neutral-100 ring-1 ring-neutral-800 sm:max-w-[85%] sm:px-4 sm:py-3'
-        }
-      >
-        <div className="space-y-2">{renderContent(message.content)}</div>
+    <div className="flex justify-start gap-2 sm:gap-3">
+      <NumaAvatar />
+      <div className="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1.5 sm:max-w-[calc(85%-2.75rem)]">
+        {showTyping ? (
+          <div className="rounded-2xl rounded-bl-sm bg-neutral-900/80 px-3 py-2.5 ring-1 ring-neutral-800 sm:px-4 sm:py-3">
+            <TypingIndicator message={message} />
+          </div>
+        ) : null}
+        {message.content.length > 0 ? (
+          <div className="break-words rounded-2xl rounded-bl-sm bg-neutral-900/80 px-3 py-2.5 text-sm text-neutral-100 ring-1 ring-neutral-800 sm:px-4 sm:py-3">
+            <div className="space-y-2">{renderContent(message.content)}</div>
+          </div>
+        ) : null}
         {message.toolCalls && message.toolCalls.length > 0 ? (
-          <div className="mt-3 space-y-1.5 border-t border-neutral-800 pt-2">
+          <div className="space-y-1.5">
             {message.toolCalls.map((tc) => (
               <ToolCallCard
                 key={tc.id}
@@ -405,13 +468,6 @@ export function Message({ message, onConfirmSwap, confirmingId }: MessageProps) 
               />
             ))}
           </div>
-        ) : null}
-        {message.pending && message.content.length === 0 && !message.toolCalls?.length ? (
-          <span className="inline-flex items-center gap-1 text-neutral-500">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-500" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-500 [animation-delay:120ms]" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-500 [animation-delay:240ms]" />
-          </span>
         ) : null}
       </div>
     </div>
