@@ -1,28 +1,63 @@
-import { headers } from "next/headers";
-import type {
-  TrendingResponse,
-  TrendingToken,
-} from "@/app/api/trending/route";
+import type { TrendingToken } from "@/app/api/trending/route";
 
-async function baseUrl(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
+type CoinGeckoTrendingItem = {
+  item: {
+    id: string;
+    coin_id: number;
+    name: string;
+    symbol: string;
+    market_cap_rank: number | null;
+    data?: {
+      price?: number | string;
+      price_change_percentage_24h?: { usd?: number };
+      market_cap?: string;
+    };
+  };
+};
+
+type CoinGeckoTrendingResponse = {
+  coins: CoinGeckoTrendingItem[];
+};
 
 export type GetTrendingResult =
   | { ok: true; tokens: TrendingToken[] }
   | { ok: false; error: string };
 
+function toNumber(v: number | string | undefined): number | null {
+  if (v === undefined || v === null) return null;
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function getTrending(): Promise<GetTrendingResult> {
   try {
-    const url = `${await baseUrl()}/api/trending`;
-    const res = await fetch(url, { next: { revalidate: 60 } });
-    const json = (await res.json()) as TrendingResponse;
-    return json;
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/search/trending",
+      {
+        next: { revalidate: 60 },
+        headers: { accept: "application/json" },
+      },
+    );
+
+    if (!res.ok) {
+      return { ok: false, error: `CoinGecko responded ${res.status}` };
+    }
+
+    const json = (await res.json()) as CoinGeckoTrendingResponse;
+    if (!json?.coins || !Array.isArray(json.coins)) {
+      return { ok: false, error: "Malformed CoinGecko payload" };
+    }
+
+    const tokens: TrendingToken[] = json.coins.map(({ item }) => ({
+      id: item.id,
+      symbol: item.symbol.toUpperCase(),
+      name: item.name,
+      price: toNumber(item.data?.price),
+      change24h: item.data?.price_change_percentage_24h?.usd ?? null,
+      marketCap: item.data?.market_cap ?? null,
+    }));
+
+    return { ok: true, tokens };
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     return { ok: false, error: message };

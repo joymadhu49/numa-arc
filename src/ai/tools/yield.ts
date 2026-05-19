@@ -1,14 +1,18 @@
-import { headers } from "next/headers";
-import type { YieldResponse, YieldPool } from "@/app/api/yield/route";
+import type { YieldPool } from "@/app/api/yield/route";
 
-async function baseUrl(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
+type LlamaPool = {
+  project: string;
+  symbol: string;
+  chain: string;
+  apy: number | null;
+  tvlUsd: number | null;
+  stablecoin: boolean;
+};
+
+type LlamaResponse = {
+  status: string;
+  data: LlamaPool[];
+};
 
 export type GetYieldArgs = {
   symbol?: string;
@@ -23,12 +27,38 @@ export async function getYield(
   args: GetYieldArgs = {},
 ): Promise<GetYieldResult> {
   try {
-    const url = `${await baseUrl()}/api/yield`;
-    const res = await fetch(url, { next: { revalidate: 300 } });
-    const json = (await res.json()) as YieldResponse;
-    if (!json.ok) return json;
+    const res = await fetch("https://yields.llama.fi/pools", {
+      next: { revalidate: 300 },
+      headers: { accept: "application/json" },
+    });
 
-    let pools = json.pools;
+    if (!res.ok) {
+      return { ok: false, error: `DefiLlama responded ${res.status}` };
+    }
+
+    const json = (await res.json()) as LlamaResponse;
+    if (!json?.data || !Array.isArray(json.data)) {
+      return { ok: false, error: "Malformed DefiLlama payload" };
+    }
+
+    let pools: YieldPool[] = json.data
+      .filter(
+        (p): p is LlamaPool & { apy: number; tvlUsd: number } =>
+          p.stablecoin === true &&
+          typeof p.apy === "number" &&
+          typeof p.tvlUsd === "number" &&
+          p.tvlUsd > 1_000_000,
+      )
+      .sort((a, b) => b.apy - a.apy)
+      .slice(0, 20)
+      .map((p) => ({
+        project: p.project,
+        symbol: p.symbol,
+        chain: p.chain,
+        apy: p.apy,
+        tvlUsd: p.tvlUsd,
+      }));
+
     if (args.symbol) {
       const s = args.symbol.toUpperCase();
       pools = pools.filter((p) => p.symbol.toUpperCase().includes(s));

@@ -1,14 +1,9 @@
-import { headers } from "next/headers";
-import type { PricesResponse, PriceEntry } from "@/app/api/prices/route";
+import type { PriceEntry } from "@/app/api/prices/route";
 
-async function baseUrl(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
+type CoinGeckoSimplePrice = Record<
+  string,
+  { usd?: number; usd_24h_change?: number }
+>;
 
 const SYMBOL_TO_ID: Record<string, string> = {
   BTC: "bitcoin",
@@ -48,16 +43,34 @@ export async function getPrices(
       return { symbol: upper, id };
     });
 
-    const ids = Array.from(new Set(mapping.map((m) => m.id))).join(",");
-    const url = `${await baseUrl()}/api/prices?ids=${encodeURIComponent(ids)}`;
-    const res = await fetch(url, { next: { revalidate: 30 } });
-    const json = (await res.json()) as PricesResponse;
-    if (!json.ok) return json;
+    const ids = Array.from(new Set(mapping.map((m) => m.id)));
+    const url = new URL("https://api.coingecko.com/api/v3/simple/price");
+    url.searchParams.set("ids", ids.join(","));
+    url.searchParams.set("vs_currencies", "usd");
+    url.searchParams.set("include_24hr_change", "true");
 
+    const res = await fetch(url.toString(), {
+      next: { revalidate: 30 },
+      headers: { accept: "application/json" },
+    });
+
+    if (!res.ok) {
+      return { ok: false, error: `CoinGecko responded ${res.status}` };
+    }
+
+    const json = (await res.json()) as CoinGeckoSimplePrice;
     const out: Record<string, PriceEntry & { id: string }> = {};
     for (const { symbol, id } of mapping) {
-      const entry = json.prices[id];
-      if (entry) out[symbol] = { ...entry, id };
+      const entry = json[id];
+      if (!entry) continue;
+      out[symbol] = {
+        id,
+        usd: typeof entry.usd === "number" ? entry.usd : null,
+        change24h:
+          typeof entry.usd_24h_change === "number"
+            ? entry.usd_24h_change
+            : null,
+      };
     }
     return { ok: true, prices: out };
   } catch (err) {
