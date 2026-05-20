@@ -20,13 +20,32 @@ import { ViemAdapter } from '@circle-fin/adapter-viem-v2'
 import { ArcTestnet, BaseSepolia, EthereumSepolia } from '@circle-fin/app-kit/chains'
 import { appkit } from '@/lib/appkit'
 import { arcTestnet } from '@/chains/arc'
+import { classifyError, type ErrorKind } from '@/lib/errors'
 
 export interface TxExecResult {
   ok: boolean
   hash?: string
   explorerUrl?: string
   error?: string
+  errorKind?: ErrorKind
+  errorHint?: string
+  errorDetail?: string
   data?: unknown
+}
+
+function failFrom(err: unknown): TxExecResult {
+  const c = classifyError(err)
+  return {
+    ok: false,
+    error: c.headline,
+    errorKind: c.kind,
+    errorHint: c.hint,
+    errorDetail: c.detail,
+  }
+}
+
+function failWith(headline: string, kind: ErrorKind = 'unknown', hint?: string): TxExecResult {
+  return { ok: false, error: headline, errorKind: kind, errorHint: hint, errorDetail: headline }
 }
 
 interface AppKitTxApi {
@@ -188,7 +207,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             ...cfg,
           })
           const hash = r.txHash ?? r.hash ?? r.transactionHash
-          if (!hash) return { ok: false, error: 'no tx hash returned' }
+          if (!hash) return failWith('Swap returned no transaction hash', 'upstream', 'The aggregator did not produce a tx. Retry.')
           return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash) }
         }
 
@@ -211,12 +230,11 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const hash = anyHash?.txHash
           if (!hash) {
             const errStep = steps.find((s) => s.state === 'error')
-            return {
-              ok: false,
-              error: errStep
-                ? `bridge step "${errStep.name}" failed`
-                : `bridge ${r.state ?? 'returned no tx hash'}`,
-            }
+            return failWith(
+              errStep ? `Bridge step "${errStep.name}" failed` : `Bridge ${r.state ?? 'returned no tx hash'}`,
+              'upstream',
+              'CCTP could not produce a burn tx. Verify source chain balance and allowance.',
+            )
           }
           return {
             ok: true,
@@ -230,7 +248,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const to = String(input.to ?? '')
           const amount = String(input.amount ?? '0')
           const token = String(input.token ?? 'USDC')
-          if (!to.startsWith('0x')) return { ok: false, error: 'invalid recipient address' }
+          if (!to.startsWith('0x')) return failWith('Invalid recipient address', 'validation', 'The recipient must be a 0x-prefixed EVM address.')
           const r = await kit.send({
             from: { adapter, chain: 'Arc_Testnet' },
             to,
@@ -239,7 +257,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             ...cfg,
           })
           const hash = r.txHash ?? r.hash
-          if (!hash) return { ok: false, error: 'no tx hash returned' }
+          if (!hash) return failWith('Send returned no transaction hash', 'upstream', 'The wallet adapter did not produce a tx. Retry.')
           return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash) }
         }
 
@@ -254,7 +272,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
         if (serverTool) {
           const connection = config.state.connections.get(config.state.current ?? '')
           const connector = connection?.connector ?? config.connectors[0]
-          if (!connector) return { ok: false, error: 'no wallet connector' }
+          if (!connector) return failWith('No wallet connector', 'wallet_not_connected', 'Connect a wallet first.')
           const provider = (await connector.getProvider()) as {
             request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
           }
@@ -267,7 +285,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             // already on chain or rejected
           }
           const account = connection?.accounts[0]
-          if (!account) return { ok: false, error: 'no account' }
+          if (!account) return failWith('No active wallet account', 'wallet_not_connected', 'Connect or unlock your wallet.')
           const walletClient = createWalletClient({
             account,
             chain: arcTestnet,
@@ -284,7 +302,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             error?: string
           }
           if (!json.ok || !json.data?.prepared) {
-            return { ok: false, error: json.error ?? 'tool returned no prepared tx' }
+            return failWith(json.error ?? 'Tool returned no prepared tx', 'upstream', 'The server-side builder did not return calldata. Retry or check params.')
           }
           const prepared = json.data.prepared
           const hash = await walletClient.sendTransaction({
@@ -298,16 +316,16 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
         }
 
         if (tool === 'register_agent' || tool === 'hire_agent' || tool === 'create_job') {
-          return {
-            ok: false,
-            error:
-              'ERC-8004 agent registry not yet deployed on Arc Testnet. This action will be enabled once the registry contracts are published.',
-          }
+          return failWith(
+            'ERC-8004 registry not deployed on Arc Testnet yet',
+            'config_missing',
+            'Enabled once the registry contracts are published.',
+          )
         }
 
-        return { ok: false, error: `tool ${tool} not executable from client` }
+        return failWith(`Tool "${tool}" is not executable from the client`, 'validation')
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : 'tx_exec_failed' }
+        return failFrom(e)
       }
     },
     [config],

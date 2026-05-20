@@ -7,6 +7,7 @@ import { baseSepolia, sepolia } from 'viem/chains'
 import { useAccount, useChainId, useConfig } from 'wagmi'
 import { arcTestnet } from '@/chains/arc'
 import { cn } from '@/lib/utils'
+import { classifyError } from '@/lib/errors'
 
 interface ChainOption {
   id: number
@@ -46,6 +47,7 @@ export function NetworkSwitcher() {
   const config = useConfig()
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<number | null>(null)
+  const [switchError, setSwitchError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -60,10 +62,14 @@ export function NetworkSwitcher() {
 
   async function switchTo(target: ChainOption) {
     setSwitching(target.id)
+    setSwitchError(null)
     try {
       const connection = config.state.connections.get(config.state.current ?? '')
       const connector = connection?.connector ?? config.connectors[0]
-      if (!connector) return
+      if (!connector) {
+        setSwitchError('Wallet not connected')
+        return
+      }
       const provider = (await connector.getProvider()) as {
         request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
       }
@@ -75,20 +81,26 @@ export function NetworkSwitcher() {
       } catch (e: unknown) {
         const code = (e as { code?: number })?.code
         if (code === 4902) {
-          await provider.request({
-            method: 'wallet_addEthereumChain',
-            params: [
-              {
-                chainId: numberToHex(target.id),
-                chainName: target.chain.name,
-                nativeCurrency: target.chain.nativeCurrency,
-                rpcUrls: target.chain.rpcUrls.default.http,
-                blockExplorerUrls: target.chain.blockExplorers
-                  ? [target.chain.blockExplorers.default.url]
-                  : undefined,
-              },
-            ],
-          })
+          try {
+            await provider.request({
+              method: 'wallet_addEthereumChain',
+              params: [
+                {
+                  chainId: numberToHex(target.id),
+                  chainName: target.chain.name,
+                  nativeCurrency: target.chain.nativeCurrency,
+                  rpcUrls: target.chain.rpcUrls.default.http,
+                  blockExplorerUrls: target.chain.blockExplorers
+                    ? [target.chain.blockExplorers.default.url]
+                    : undefined,
+                },
+              ],
+            })
+          } catch (addErr) {
+            setSwitchError(classifyError(addErr).headline)
+          }
+        } else {
+          setSwitchError(classifyError(e).headline)
         }
       }
     } finally {
@@ -116,6 +128,11 @@ export function NetworkSwitcher() {
           <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-neutral-500">
             Switch network
           </div>
+          {switchError ? (
+            <div className="border-b border-red-900/60 bg-red-950/40 px-3 py-2 text-[11px] text-red-200">
+              {switchError}
+            </div>
+          ) : null}
           {CHAINS.map((c) => {
             const active = c.id === chainId
             const pending = switching === c.id

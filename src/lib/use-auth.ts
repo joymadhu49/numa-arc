@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useSyncExternalStore, useState } from 'react'
 import { useAccount, useConnect, useDisconnect, useSignMessage } from 'wagmi'
+import { classifyError } from '@/lib/errors'
 
 const STORAGE_KEY = 'arcwise.siwe'
 
@@ -122,7 +123,7 @@ export function useAuth(): AuthState {
       saveRecord({ address, signature, message, issuedAt })
       setSignedAddressGlobal(address.toLowerCase())
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'sign_in_failed')
+      setError(classifyError(e).headline)
     } finally {
       setSigning(false)
     }

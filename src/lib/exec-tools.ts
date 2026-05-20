@@ -1,4 +1,5 @@
 import type { Address } from 'viem'
+import { classifyError, type ErrorKind } from '@/lib/errors'
 
 export type ExecutableToolName =
   | 'swap'
@@ -20,12 +21,9 @@ export interface ToolExecResult {
   ok: boolean
   data?: unknown
   error?: string
-}
-
-const TOOLS_ENDPOINT_MAP: Record<string, string> = {
-  scan_token: '/api/scan',
-  scan_tx: '/api/scan',
-  scan_approvals: '/api/scan',
+  errorKind?: ErrorKind
+  errorHint?: string
+  errorDetail?: string
 }
 
 const SCAN_KIND_MAP: Record<string, string> = {
@@ -36,6 +34,37 @@ const SCAN_KIND_MAP: Record<string, string> = {
 
 const TOOL_NAME_TO_DISPATCH: Record<string, string> = {
   get_portfolio: 'getPortfolio',
+}
+
+function failFrom(err: unknown): ToolExecResult {
+  const c = classifyError(err)
+  return {
+    ok: false,
+    error: c.headline,
+    errorKind: c.kind,
+    errorHint: c.hint,
+    errorDetail: c.detail,
+  }
+}
+
+function annotateUpstream(json: ToolExecResult): ToolExecResult {
+  if (json.ok || json.errorKind) return json
+  const c = classifyError(json.error ?? 'Unknown server error')
+  return {
+    ...json,
+    error: c.headline,
+    errorKind: c.kind,
+    errorHint: c.hint,
+    errorDetail: json.errorDetail ?? c.detail,
+  }
+}
+
+async function safeJson(res: Response): Promise<ToolExecResult> {
+  try {
+    return (await res.json()) as ToolExecResult
+  } catch (e) {
+    return failFrom(e)
+  }
 }
 
 export async function execTool(
@@ -51,8 +80,10 @@ export async function execTool(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ kind: scanKind, args: input, address }),
       })
-      const json = (await res.json()) as ToolExecResult
-      return json
+      if (!res.ok) {
+        return failFrom(new Error(`Scan API responded ${res.status}`))
+      }
+      return annotateUpstream(await safeJson(res))
     }
 
     const SIGNING_TOOLS = new Set([
@@ -86,9 +117,11 @@ export async function execTool(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tool: dispatch, args: input, address }),
     })
-    const json = (await res.json()) as ToolExecResult
-    return json
+    if (!res.ok) {
+      return failFrom(new Error(`Tools API responded ${res.status}`))
+    }
+    return annotateUpstream(await safeJson(res))
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'exec_failed' }
+    return failFrom(e)
   }
 }

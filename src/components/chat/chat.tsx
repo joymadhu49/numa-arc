@@ -6,6 +6,7 @@ import { ArrowUp } from 'lucide-react'
 import { ExampleChips } from './example-chips'
 import { Message, type ChatMessage, type ToolCall } from './message'
 import { execTool } from '@/lib/exec-tools'
+import { classifyError } from '@/lib/errors'
 import { useAuth } from '@/lib/use-auth'
 import { AuthGate } from '@/components/auth/auth-gate'
 import { useTxExecutor } from '@/lib/tx-executor'
@@ -130,6 +131,9 @@ export function Chat() {
                     ? { status: 'broadcast', hash: result.hash, explorerUrl: result.explorerUrl }
                     : tc.result,
                   error: result.ok ? undefined : result.error,
+                  errorKind: result.ok ? undefined : result.errorKind,
+                  errorHint: result.ok ? undefined : result.errorHint,
+                  errorDetail: result.ok ? undefined : result.errorDetail,
                 }
               : tc,
           )
@@ -192,8 +196,10 @@ export function Chat() {
           seenIds.add(data.id)
           tools.push({ id: data.id, name: data.name, input: data.input ?? {} })
         } else if (event === 'error') {
-          const msg = typeof data.message === 'string' ? data.message : 'unknown_error'
-          text = text || `Error: ${msg}`
+          const raw = typeof data.message === 'string' ? data.message : 'unknown_error'
+          const c = classifyError(raw)
+          const friendly = `**${c.headline}**${c.hint ? `\n\n${c.hint}` : ''}`
+          text = text || friendly
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId ? { ...m, content: text, pending: false } : m,
@@ -281,6 +287,9 @@ export function Chat() {
                   status: r.exec.ok ? ('success' as const) : ('error' as const),
                   result: r.exec.data,
                   error: r.exec.error,
+                  errorKind: r.exec.errorKind,
+                  errorHint: r.exec.errorHint,
+                  errorDetail: r.exec.errorDetail,
                 }
               })
               return { ...m, toolCalls: next }
@@ -320,10 +329,11 @@ export function Chat() {
           prev.map((m) => (m.id === assistantId ? { ...m, pending: false } : m)),
         )
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'request_failed'
+        const c = classifyError(err)
+        const body = `**${c.headline}**${c.hint ? `\n\n${c.hint}` : ''}`
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: `Error: ${msg}`, pending: false } : m,
+            m.id === assistantId ? { ...m, content: body, pending: false } : m,
           ),
         )
       } finally {

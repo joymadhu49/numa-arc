@@ -1,9 +1,10 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { CheckCircle2, ExternalLink, Loader2, PartyPopper, XCircle, Wrench } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, PartyPopper, XCircle, Wrench } from 'lucide-react'
 import { MintAgentCard } from './mint-agent-card'
 import { NumaAvatar } from './numa-avatar'
+import type { ErrorKind } from '@/lib/errors'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -16,6 +17,9 @@ export interface ToolCall {
   status?: ToolStatus
   result?: unknown
   error?: string
+  errorKind?: ErrorKind
+  errorHint?: string
+  errorDetail?: string
 }
 
 export interface ChatMessage {
@@ -345,10 +349,13 @@ function ToolCallCard({
         </span>
         {summary ? <span className="break-all text-neutral-400">— {summary}</span> : null}
       </div>
-      {status === 'error' && tc.error ? (
-        <div className="mt-1.5 rounded bg-red-950/40 px-2 py-1 text-[11px] text-red-300">
-          {tc.error}
-        </div>
+      {status === 'error' && (tc.error || tc.errorDetail) ? (
+        <ErrorBlock
+          headline={tc.error}
+          hint={tc.errorHint}
+          detail={tc.errorDetail}
+          kind={tc.errorKind}
+        />
       ) : null}
       {status === 'success' &&
       EXECUTABLE_TOOLS.has(tc.name) &&
@@ -389,6 +396,46 @@ function ToolCallCard({
           </pre>
         </details>
       ) : null}
+    </div>
+  )
+}
+
+function ErrorBlock({
+  headline,
+  hint,
+  detail,
+  kind,
+}: {
+  headline?: string
+  hint?: string
+  detail?: string
+  kind?: ErrorKind
+}) {
+  const showRetryNote = kind === 'rate_limit' || kind === 'timeout' || kind === 'network'
+  return (
+    <div className="mt-2 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-2 text-[12px] text-red-200">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-[2px] h-3.5 w-3.5 shrink-0 text-red-400" />
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="font-medium text-red-100">{headline || 'Something went wrong'}</div>
+          {hint ? <div className="text-[11px] leading-relaxed text-red-200/80">{hint}</div> : null}
+          {showRetryNote ? (
+            <div className="text-[10px] uppercase tracking-wider text-red-300/70">
+              Retry usually succeeds
+            </div>
+          ) : null}
+          {detail && detail !== headline ? (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-red-300/60 hover:text-red-200">
+                technical detail
+              </summary>
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-black/30 px-2 py-1.5 font-mono text-[10px] leading-snug text-red-200/90 break-all whitespace-pre-wrap">
+                {detail}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
