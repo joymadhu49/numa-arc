@@ -10,8 +10,8 @@ export default function AgentPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <header className="mb-6 sm:mb-8">
-        <h1 className="text-xl font-semibold sm:text-2xl">Numa Agent Identity</h1>
-        <p className="text-sm text-neutral-400">
+        <h1 className="text-xl font-semibold text-fg sm:text-2xl">Numa Agent Identity</h1>
+        <p className="text-sm text-muted-fg">
           On-chain soulbound NFT on Arc Testnet (chainId {arcTestnet.id}).
         </p>
       </header>
@@ -20,8 +20,8 @@ export default function AgentPage() {
         <AgentProfile />
       </div>
 
-      <section className="rounded-2xl border border-neutral-800 p-4 sm:p-5">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-neutral-400">
+      <section className="rounded-2xl border border-border-c bg-card/60 p-4 sm:p-5">
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-fg">
           NumaAgent contract
         </h2>
         {contract ? (
@@ -34,16 +34,16 @@ export default function AgentPage() {
                 href={`${arcTestnet.blockExplorers.default.url}/address/${contract}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
+                className="text-xs text-muted-fg underline decoration-border-c underline-offset-4 transition hover:text-fg"
               >
                 View on Arcscan →
               </a>
             </div>
           </dl>
         ) : (
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-muted-fg">
             Contract not deployed yet. Run{' '}
-            <code className="break-all rounded bg-neutral-900 px-1.5 py-0.5">
+            <code className="break-all rounded bg-muted-bg px-1.5 py-0.5 font-mono text-fg">
               DEPLOYER_PRIVATE_KEY=0x... npm run deploy:numa-agent
             </code>
             .
@@ -57,8 +57,8 @@ export default function AgentPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-      <dt className="shrink-0 text-neutral-500">{label}</dt>
-      <dd className="break-all font-mono text-xs text-neutral-200 sm:text-right">{value}</dd>
+      <dt className="shrink-0 text-muted-fg">{label}</dt>
+      <dd className="break-all font-mono text-xs text-fg sm:text-right">{value}</dd>
     </div>
   )
 }

@@ -162,7 +162,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
     <div className="numa-card-in overflow-hidden rounded-2xl border border-border-c bg-card">
       <div className="grid gap-4 p-4 sm:gap-5 sm:p-5 md:grid-cols-[200px_1fr]">
         <div className="relative mx-auto w-full max-w-[180px] md:max-w-none">
-          <div className="grid aspect-square w-full place-items-center rounded-xl bg-white">
+          <div className="grid aspect-square w-full place-items-center rounded-xl bg-muted-bg">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={agent.imageUrl}
@@ -191,13 +191,13 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
+            <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-2xs font-medium uppercase tracking-wider text-primary">
               {agent.rarity}
             </span>
             {agent.capabilities.map((c) => (
               <span
                 key={c}
-                className="rounded-full border border-border-c px-2 py-0.5 text-[10px] text-muted-fg"
+                className="rounded-full border border-border-c px-2 py-0.5 text-2xs text-muted-fg"
               >
                 {c}
               </span>
@@ -221,7 +221,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
                 <Sparkles className="h-4 w-4 text-success" />
                 Minted on-chain. {minted.name} is yours.
               </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-2xs">
                 <a
                   href={minted.explorerUrl ?? '#'}
                   target="_blank"

@@ -38,7 +38,7 @@ export function TrendingCard({ data }: { data: TrendingCardData }) {
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-fg">{t.symbol}</div>
-              <div className="truncate text-[11px] text-muted-fg">{t.name}</div>
+              <div className="truncate text-2xs text-muted-fg">{t.name}</div>
             </div>
             <div className="shrink-0 text-right">
               {t.priceUsd != null ? (

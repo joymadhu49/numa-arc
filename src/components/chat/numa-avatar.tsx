@@ -7,12 +7,13 @@ interface NumaAvatarProps {
 
 export function NumaAvatar({ active = false, size = 36 }: NumaAvatarProps) {
   const ringClass = active
-    ? 'ring-2 ring-[#2775CA]/50 shadow-[0_0_12px_rgba(39,117,202,0.40)]'
+    ? 'ring-2 ring-primary/50 shadow-glow'
     : 'ring-1 ring-border-c'
   return (
     <div
       className={
-        'relative flex shrink-0 items-center justify-center self-end overflow-hidden rounded-full bg-neutral-900 numa-bob ' +
+        // The Numa face is white SVG art, so the disc stays a constant brand-dark in both themes.
+        'relative flex shrink-0 items-center justify-center self-end overflow-hidden rounded-full bg-[#11141a] numa-bob ' +
         ringClass +
         (active ? ' numa-bob-fast' : '')
       }

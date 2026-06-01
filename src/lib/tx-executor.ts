@@ -278,6 +278,7 @@ function checkSpendCaps(amountRaw: unknown, address: string | undefined): TxExec
 
 function buildAdapter(
   config: ReturnType<typeof useConfig>,
+  address?: Address,
 ): ViemAdapter {
   const adapterOptions = {
     getPublicClient: ({ chain }: { chain: unknown }): PublicClient => {
@@ -289,7 +290,11 @@ function buildAdapter(
     },
     getWalletClient: async ({ chain }: { chain: unknown }): Promise<WalletClient> => {
       const info = resolveChain(chain)
-      const connection = config.state.connections.get(config.state.current ?? '')
+      // Resolve the active connection robustly: prefer "current", but fall back
+      // to any live connection — wagmi's `current` can lag a fresh reconnect.
+      const connection =
+        config.state.connections.get(config.state.current ?? '') ??
+        Array.from(config.state.connections.values())[0]
       const connector = connection?.connector ?? config.connectors[0]
       if (!connector) throw new Error('no wallet connector')
       const provider = (await connector.getProvider()) as {
@@ -322,7 +327,9 @@ function buildAdapter(
           // 4001 = user rejected; surface anything else, ignore otherwise
         }
       }
-      const account = connection?.accounts[0]
+      // The connected address is authoritative (it gates the whole app); prefer
+      // it over the connection's cached account list.
+      const account = address ?? connection?.accounts[0]
       if (!account) throw new Error('no account')
       const walletClient: WalletClient = createWalletClient({
         account,
@@ -354,7 +361,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
   return useCallback(
     async ({ tool, input, address }: ExecInput): Promise<TxExecResult> => {
       try {
-        const adapter = buildAdapter(config)
+        const adapter = buildAdapter(config, address)
         const kit = appkit as unknown as AppKitTxApi
         const cfg = KIT_KEY ? { config: { kitKey: KIT_KEY } } : {}
 
@@ -487,7 +494,9 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             input.amount ?? input.amountA ?? input.budgetUsdc ?? input.amountB
           const capErr = checkSpendCaps(capAmount, address)
           if (capErr) return capErr
-          const connection = config.state.connections.get(config.state.current ?? '')
+          const connection =
+            config.state.connections.get(config.state.current ?? '') ??
+            Array.from(config.state.connections.values())[0]
           const connector = connection?.connector ?? config.connectors[0]
           if (!connector) return failWith('No wallet connector', 'wallet_not_connected', 'Connect a wallet first.')
           const provider = (await connector.getProvider()) as {
@@ -501,7 +510,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           } catch {
             // already on chain or rejected
           }
-          const account = connection?.accounts[0]
+          const account = (address ?? connection?.accounts[0]) as Address | undefined
           if (!account) return failWith('No active wallet account', 'wallet_not_connected', 'Connect or unlock your wallet.')
           const walletClient = createWalletClient({
             account,

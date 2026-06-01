@@ -55,11 +55,15 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
 
   const hiddenCount = nonEmpty.length - COLLAPSE_AFTER
   const shown = expanded ? nonEmpty : nonEmpty.slice(0, COLLAPSE_AFTER)
+  const dustCount = chains.reduce(
+    (n, c) => n + c.tokens.filter((t) => t.usd !== null && t.usd < DUST_USD).length,
+    0,
+  )
 
   return (
     <CardShell icon={<Wallet className="h-4 w-4" />} title="Portfolio">
       <div className="border-b border-border-c px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-fg">Net worth</div>
+        <div className="text-2xs font-semibold uppercase tracking-wider text-muted-fg">Net worth</div>
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="text-xl font-semibold tabular-nums text-fg sm:text-2xl">{fmtUsd(totalUsd)}</span>
           {change24hPct != null ? (
@@ -79,7 +83,7 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
               <div key={chain.chainKey} className="px-3 py-2">
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <ChainLogo src={chain.logo} name={chain.chainName} chainKey={chain.chainKey} size={14} />
-                  <span className="text-[11px] font-medium text-muted-fg">{chain.chainName}</span>
+                  <span className="text-2xs font-medium text-muted-fg">{chain.chainName}</span>
                 </div>
                 <div className="space-y-1">
                   {chain.tokens.map((t, i) => (
@@ -88,16 +92,16 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
                         <TokenLogo src={t.logo} alt={t.symbol} size={18} />
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[13px] font-medium text-fg">{t.symbol}</span>
+                            <span className="text-sm font-medium text-fg">{t.symbol}</span>
                             {t.change24hPct != null ? <Delta pct={t.change24hPct} /> : null}
                           </div>
-                          <div className="truncate text-[11px] tabular-nums text-muted-fg">{t.balance} {t.symbol}</div>
+                          <div className="truncate text-2xs tabular-nums text-muted-fg">{t.balance} {t.symbol}</div>
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
-                        <div className="text-[13px] tabular-nums text-fg">{fmtUsd(t.usd)}</div>
+                        <div className="text-sm tabular-nums text-fg">{fmtUsd(t.usd)}</div>
                         {t.priceUsd != null ? (
-                          <div className="text-[11px] tabular-nums text-muted-fg">{fmtUsd(t.priceUsd)}</div>
+                          <div className="text-2xs tabular-nums text-muted-fg">{fmtUsd(t.priceUsd)}</div>
                         ) : null}
                       </div>
                     </div>
@@ -108,10 +112,15 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
           </div>
           {hiddenCount > 0 ? (
             <button type="button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}
-              className="flex w-full items-center justify-center gap-1 border-t border-border-c px-3 py-2 text-[11px] font-medium text-muted-fg transition hover:bg-muted-bg hover:text-fg">
+              className="flex w-full items-center justify-center gap-1 border-t border-border-c px-3 py-2 text-2xs font-medium text-muted-fg transition hover:bg-muted-bg hover:text-fg">
               {expanded ? 'Show less' : `Show ${hiddenCount} more ${hiddenCount === 1 ? 'chain' : 'chains'}`}
               <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded ? 'rotate-180' : '')} />
             </button>
+          ) : null}
+          {dustCount > 0 ? (
+            <div className="border-t border-border-c px-3 py-1.5 text-2xs text-muted-fg">
+              {dustCount} small {dustCount === 1 ? 'balance' : 'balances'} under $0.01 hidden
+            </div>
           ) : null}
         </>
       )}

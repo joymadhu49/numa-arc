@@ -44,7 +44,7 @@ export function SwapPreviewCard({
       icon={<Repeat className="h-4 w-4" />}
       title={action}
       right={
-        <span className="rounded-full border border-border-c bg-bg px-2 py-0.5 text-[10px] font-medium text-muted-fg">
+        <span className="rounded-full border border-border-c bg-bg px-2 py-0.5 text-2xs font-medium text-muted-fg">
           {network}
         </span>
       }
@@ -74,11 +74,11 @@ export function SwapPreviewCard({
             ))}
           </div>
         ) : (
-          <div className="mt-3 text-[11px] text-muted-fg">Gas in USDC · slippage ≤0.5%</div>
+          <div className="mt-3 text-2xs text-muted-fg">Gas in USDC · slippage ≤0.5%</div>
         )}
 
         {/* security note */}
-        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-fg">
+        <div className="mt-3 flex items-center gap-1.5 text-2xs text-muted-fg">
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" />
           {note}
         </div>

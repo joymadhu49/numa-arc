@@ -5,6 +5,41 @@ const config: Config = {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      fontSize: {
+        // Retires ad-hoc text-[10px]/[11px] with a single legible caption size.
+        '2xs': ['0.6875rem', { lineHeight: '0.875rem' }], // 11px
+      },
+      boxShadow: {
+        'elevation-1': '0 1px 2px 0 rgb(0 0 0 / 0.20)',
+        'elevation-2': '0 2px 8px -2px rgb(0 0 0 / 0.25)',
+        'elevation-3': '0 8px 24px -4px rgb(0 0 0 / 0.35)',
+        // Brand glow (token-driven) — replaces the inline hex on the avatar.
+        glow: '0 0 12px oklch(var(--primary) / 0.40)',
+      },
+      zIndex: {
+        sticky: '30',
+        dropdown: '40',
+        modal: '50',
+        toast: '60',
+      },
+      keyframes: {
+        'card-in': {
+          from: { opacity: '0', transform: 'translateY(6px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+      },
+      animation: {
+        'card-in': 'card-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both',
+        shimmer: 'shimmer 1.6s ease-in-out infinite',
+      },
       colors: {
         // --- Legacy RGB tokens (kept so existing utilities never break) ---
         background: 'rgb(var(--background) / <alpha-value>)',

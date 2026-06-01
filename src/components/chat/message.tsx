@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   Check,
   ExternalLink,
   Loader2,
+  RotateCcw,
   XCircle,
   Wrench,
 } from 'lucide-react'
@@ -57,6 +59,8 @@ interface MessageProps {
   onConfirm?: (toolName: string, toolCallId: string, input: unknown) => void
   /** toolCallId currently awaiting a wallet signature. */
   confirmingId?: string | null
+  /** When set (last assistant turn, idle), shows a Regenerate action. */
+  onRegenerate?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -65,14 +69,34 @@ interface MessageProps {
 
 function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+  // Order matters: links before italics so `[a](b)` isn't mis-split on `*`.
+  const pattern = /(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   let key = 0
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
     const token = match[0]
-    if (token.startsWith('**')) {
+    if (token.startsWith('[')) {
+      const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)
+      // Only allow http(s) links — never render javascript:/data: URIs.
+      const href = m && /^https?:\/\//i.test(m[2]) ? m[2] : null
+      if (m && href) {
+        nodes.push(
+          <a
+            key={`a-${key++}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary underline decoration-primary/40 underline-offset-2 transition hover:decoration-primary"
+          >
+            {m[1]}
+          </a>,
+        )
+      } else {
+        nodes.push(token)
+      }
+    } else if (token.startsWith('**')) {
       nodes.push(
         <strong key={`b-${key++}`} className="font-semibold text-fg">
           {token.slice(2, -2)}
@@ -104,31 +128,100 @@ function renderContent(content: string): ReactNode {
   if (!content) return null
   const lines = content.split('\n')
   const blocks: ReactNode[] = []
-  let list: string[] | null = null
+  let ul: string[] | null = null
+  let ol: string[] | null = null
   let key = 0
 
-  const flushList = () => {
-    if (list && list.length > 0) {
+  const flushUl = () => {
+    if (ul && ul.length > 0) {
       blocks.push(
         <ul key={`ul-${key++}`} className="ml-5 list-disc space-y-1">
-          {list.map((item, i) => (
+          {ul.map((item, i) => (
             <li key={i}>{renderInline(item)}</li>
           ))}
         </ul>,
       )
     }
-    list = null
+    ul = null
+  }
+  const flushOl = () => {
+    if (ol && ol.length > 0) {
+      blocks.push(
+        <ol key={`ol-${key++}`} className="ml-5 list-decimal space-y-1">
+          {ol.map((item, i) => (
+            <li key={i}>{renderInline(item)}</li>
+          ))}
+        </ol>,
+      )
+    }
+    ol = null
+  }
+  const flushLists = () => {
+    flushUl()
+    flushOl()
   }
 
-  for (const raw of lines) {
-    const line = raw.trimEnd()
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line)
-    if (bullet) {
-      if (!list) list = []
-      list.push(bullet[1])
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd()
+
+    // Fenced code block ``` … ``` (optionally with a language tag).
+    if (/^\s*```(\w+)?\s*$/.test(line)) {
+      flushLists()
+      const code: string[] = []
+      i++
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
+        code.push(lines[i])
+        i++
+      }
+      blocks.push(
+        <pre
+          key={`pre-${key++}`}
+          className="my-1 overflow-x-auto rounded-lg border border-border-c bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-fg numa-scroll"
+        >
+          <code>{code.join('\n')}</code>
+        </pre>,
+      )
       continue
     }
-    flushList()
+
+    // Heading (#, ##, ###).
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line)
+    if (heading) {
+      flushLists()
+      const level = heading[1].length
+      const cls =
+        level === 1
+          ? 'text-base font-semibold'
+          : level === 2
+            ? 'text-sm font-semibold'
+            : 'text-sm font-medium'
+      blocks.push(
+        <p key={`h-${key++}`} className={cn('mt-1 text-fg', cls)}>
+          {renderInline(heading[2])}
+        </p>,
+      )
+      continue
+    }
+
+    // Ordered list item (1. …).
+    const olItem = /^\s*\d+\.\s+(.*)$/.exec(line)
+    if (olItem) {
+      flushUl()
+      if (!ol) ol = []
+      ol.push(olItem[1])
+      continue
+    }
+
+    // Unordered list item (- … / * …).
+    const ulItem = /^\s*[-*]\s+(.*)$/.exec(line)
+    if (ulItem) {
+      flushOl()
+      if (!ul) ul = []
+      ul.push(ulItem[1])
+      continue
+    }
+
+    flushLists()
     if (line.length === 0) {
       blocks.push(<div key={`sp-${key++}`} className="h-2" />)
     } else {
@@ -139,7 +232,7 @@ function renderContent(content: string): ReactNode {
       )
     }
   }
-  flushList()
+  flushLists()
   return blocks
 }
 
@@ -320,23 +413,26 @@ function ErrorBlock({
 }) {
   const showRetryNote = kind === 'rate_limit' || kind === 'timeout' || kind === 'network'
   return (
-    <div className="mt-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+    <div
+      className="mt-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"
+      role="alert"
+    >
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-[2px] h-3.5 w-3.5 shrink-0 text-danger" />
         <div className="min-w-0 flex-1 space-y-1">
           <div className="font-medium text-danger">{headline || 'Something went wrong'}</div>
-          {hint ? <div className="text-[11px] leading-relaxed text-danger/80">{hint}</div> : null}
+          {hint ? <div className="text-2xs leading-relaxed text-danger/80">{hint}</div> : null}
           {showRetryNote ? (
-            <div className="text-[10px] uppercase tracking-wider text-danger/70">
+            <div className="text-2xs uppercase tracking-wider text-danger/70">
               Retry usually succeeds
             </div>
           ) : null}
           {detail && detail !== headline ? (
             <details className="mt-1">
-              <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-danger/60 hover:text-danger">
+              <summary className="cursor-pointer text-2xs uppercase tracking-wider text-danger/60 hover:text-danger">
                 technical detail
               </summary>
-              <pre className="mt-1 max-h-40 overflow-auto rounded bg-black/30 px-2 py-1.5 font-mono text-[10px] leading-snug text-danger/90 break-all whitespace-pre-wrap numa-scroll">
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-bg px-2 py-1.5 font-mono text-2xs leading-snug text-danger/90 break-all whitespace-pre-wrap numa-scroll">
                 {detail}
               </pre>
             </details>
@@ -431,7 +527,7 @@ function ToolChip({
           href={getExplorer(part) ?? '#'}
           target="_blank"
           rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 break-all text-[11px] text-muted-fg underline decoration-border-c underline-offset-4 hover:text-fg"
+          className="mt-2 inline-flex items-center gap-1 break-all text-2xs text-muted-fg underline decoration-border-c underline-offset-4 hover:text-fg"
         >
           <ExternalLink className="h-3 w-3 shrink-0" />
           {getHash(part)?.slice(0, 10)}…
@@ -440,10 +536,10 @@ function ToolChip({
 
       {state === 'output-available' && !outFailed ? (
         <details className="mt-1.5">
-          <summary className="cursor-pointer text-[11px] text-muted-fg hover:text-fg">
+          <summary className="cursor-pointer text-2xs text-muted-fg hover:text-fg">
             view result
           </summary>
-          <pre className="mt-1 overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-[10px] text-muted-fg numa-scroll">
+          <pre className="mt-1 overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-2xs text-muted-fg numa-scroll">
             {JSON.stringify(part.output, null, 2)}
           </pre>
         </details>
@@ -459,6 +555,7 @@ function ConfirmButton({ waiting, onClick }: { waiting: boolean; onClick: () => 
       type="button"
       disabled={waiting}
       onClick={onClick}
+      aria-label={waiting ? 'Waiting for wallet confirmation' : 'Confirm transaction in wallet'}
       className="inline-flex min-h-[40px] items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-fg shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {waiting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -677,7 +774,7 @@ function ToolTimeline({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-[11px] font-medium text-muted-fg transition hover:text-fg"
+        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-2xs font-medium text-muted-fg transition hover:text-fg"
       >
         <span className="inline-flex items-center gap-1.5">
           <Wrench className="h-3 w-3" />
@@ -748,7 +845,10 @@ export function ThinkingRow() {
  */
 function EmptyAssistantNote() {
   return (
-    <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm bg-card/80 px-3 py-2 text-xs text-muted-fg ring-1 ring-border-c sm:px-3.5 sm:py-2.5">
+    <div
+      className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm bg-card/80 px-3 py-2 text-xs text-muted-fg ring-1 ring-border-c sm:px-3.5 sm:py-2.5"
+      role="status"
+    >
       <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
       <span>No response came back. Resend your message or tap &ldquo;Try again&rdquo;.</span>
     </div>
@@ -763,12 +863,17 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       aria-label="Copy message"
-      onClick={() => {
-        navigator.clipboard.writeText(text)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text)
+          setCopied(true)
+          toast.success('Copied to clipboard')
+          setTimeout(() => setCopied(false), 1500)
+        } catch {
+          toast.error('Couldn’t copy to clipboard')
+        }
       }}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-fg opacity-0 transition hover:bg-muted-bg hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-fg opacity-100 transition hover:bg-muted-bg hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
     >
       {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
@@ -779,7 +884,13 @@ function CopyButton({ text }: { text: string }) {
 // Message.
 // ---------------------------------------------------------------------------
 
-export function Message({ message, active = false, onConfirm, confirmingId }: MessageProps) {
+export function Message({
+  message,
+  active = false,
+  onConfirm,
+  confirmingId,
+  onRegenerate,
+}: MessageProps) {
   const isUser = message.role === 'user'
 
   const textContent = message.parts
@@ -793,7 +904,7 @@ export function Message({ message, active = false, onConfirm, confirmingId }: Me
         <div className="order-2 max-w-[92%] break-words rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-fg sm:max-w-[80%] sm:px-3.5 sm:py-2.5">
           <div className="space-y-2">{renderContent(textContent)}</div>
         </div>
-        <div className="order-1 mt-1 hidden sm:block">
+        <div className="order-1 mt-1">
           <CopyButton text={textContent} />
         </div>
       </div>
@@ -880,10 +991,20 @@ export function Message({ message, active = false, onConfirm, confirmingId }: Me
             <div className="min-w-0 flex-1 break-words rounded-2xl rounded-bl-sm bg-card/80 px-3 py-2 text-sm text-fg ring-1 ring-border-c sm:px-3.5 sm:py-2.5">
               <div className="space-y-2">{renderContent(textContent)}</div>
             </div>
-            <div className="mt-1 hidden sm:block">
+            <div className="mt-1">
               <CopyButton text={textContent} />
             </div>
           </div>
+        ) : null}
+
+        {onRegenerate ? (
+          <button
+            type="button"
+            onClick={onRegenerate}
+            className="inline-flex w-fit items-center gap-1.5 rounded-md px-1.5 py-1 text-2xs font-medium text-muted-fg transition hover:bg-muted-bg hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <RotateCcw className="h-3 w-3" /> Regenerate
+          </button>
         ) : null}
       </div>
     </div>

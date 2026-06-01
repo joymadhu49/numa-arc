@@ -68,13 +68,13 @@ export function ScanResultCard({ data }: { data: ScanCardData }) {
       }
     >
       <div className="border-b border-border-c px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs">
           {data.name && data.name !== title ? (
             <span className="text-muted-fg">{data.name}</span>
           ) : null}
           <span className="font-mono break-all text-muted-fg">{data.address}</span>
         </div>
-        <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-fg">
+        <div className="mt-1 text-2xs uppercase tracking-wider text-muted-fg">
           source: {data.source}
           {data.chainKey ? ` · ${data.chainKey}` : ''}
         </div>

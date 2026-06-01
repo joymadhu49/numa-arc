@@ -36,17 +36,17 @@ export function YieldCard({ data }: { data: YieldCardData }) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-medium text-fg">{p.symbol}</span>
-                <span className="rounded bg-muted-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-fg">
+                <span className="rounded bg-muted-bg px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-fg">
                   {p.chain}
                 </span>
               </div>
-              <div className="truncate text-[11px] text-muted-fg">{p.project}</div>
+              <div className="truncate text-2xs text-muted-fg">{p.project}</div>
             </div>
             <div className="shrink-0 text-right">
               <div className="text-sm font-semibold tabular-nums text-success">
                 {fmtPct(p.apy)}
               </div>
-              <div className="text-[11px] tabular-nums text-muted-fg">
+              <div className="text-2xs tabular-nums text-muted-fg">
                 {fmtUsd(p.tvlUsd, { compact: true })} TVL
               </div>
             </div>

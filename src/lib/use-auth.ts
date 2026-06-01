@@ -35,7 +35,7 @@ export interface AuthState {
   connectors: ReturnType<typeof useConnect>['connectors']
   connect: (connectorIndex: number) => void
   connectPending: boolean
-  signIn: () => Promise<void>
+  signIn: () => Promise<boolean>
   signOut: () => void
 }
 
@@ -71,10 +71,10 @@ export function useAuth(): AuthState {
     }
   }, [address, sessionAddress])
 
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async (): Promise<boolean> => {
     if (!address) {
       setError('Connect a wallet first.')
-      return
+      return false
     }
     setSigning(true)
     setError(undefined)
@@ -105,8 +105,10 @@ export function useAuth(): AuthState {
         throw new Error(verifyJson.error ?? 'Sign-in verification failed.')
       }
       setSessionAddress(address.toLowerCase())
+      return true
     } catch (e) {
       setError(classifyError(e).headline)
+      return false
     } finally {
       setSigning(false)
     }

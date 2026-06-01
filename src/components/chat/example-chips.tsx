@@ -9,28 +9,32 @@ interface ExampleChipsProps {
   prompts?: readonly string[]
   /** Section label. */
   label?: string
-  /** Compact pill layout (for follow-ups) vs. bulleted list (for welcome). */
+  /** Compact pill layout (for follow-ups) vs. tappable rows (for welcome). */
   variant?: 'list' | 'pills'
 }
 
+/**
+ * Capability map shown on the empty-state welcome. Bridge prompts intentionally
+ * span the three CCTP shapes — INTO Arc, OUT of Arc, and ACROSS two non-Arc
+ * chains — so users see Numa as a multichain hub, not an Arc-only on-ramp.
+ * "on Arc" suffix is dropped where context already implies it (yield is
+ * cross-chain by default, LP tool resolves to Arc internally).
+ */
 const EXAMPLES: readonly string[] = [
   'Show my portfolio with total balance',
-  'Show me top stablecoin yield opportunities',
-  'Swap 1 USDC for EURC on Arc Testnet',
+  'Swap 1 USDC for EURC on Arc',
   'Bridge 50 USDC from Base Sepolia to Arc',
-  'Bridge 25 USDC from Ethereum Sepolia to Arc',
-  'Send 10 USDC to 0x… on Arc',
-  'Show trending tokens on Arc',
-  "What's the BTC price today?",
-  'Scan this token: 0x…',
-  'Mint your agent ID',
+  'Bridge 10 USDC from Arc to Arbitrum Sepolia',
+  'Bridge 15 USDC from Base Sepolia to Arbitrum Sepolia',
+  'Check my token approvals for risky allowances',
+  'Scan EURC: 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
 ]
 
 export function ExampleChips({
   onPick,
   disabled = false,
   prompts,
-  label = 'Try an example:',
+  label = 'Start with',
   variant = 'list',
 }: ExampleChipsProps) {
   const items = prompts ?? EXAMPLES
@@ -46,7 +50,7 @@ export function ExampleChips({
             onClick={() => onPick(ex)}
             className="inline-flex items-center gap-1.5 rounded-full border border-border-c bg-card px-2.5 py-1 text-xs text-fg transition hover:bg-muted-bg disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Sparkles className="h-3 w-3 text-primary" />
+            <Sparkles aria-hidden className="h-3 w-3 text-primary" />
             {ex}
           </button>
         ))}
@@ -55,18 +59,31 @@ export function ExampleChips({
   }
 
   return (
-    <div className="w-full rounded-2xl border border-border-c bg-card px-3 py-2.5 sm:px-4 sm:py-3">
-      <p className="mb-1.5 text-xs font-medium text-muted-fg sm:mb-2 sm:text-sm">{label}</p>
-      <ul className="space-y-1 sm:space-y-1.5">
+    <div className="w-full overflow-hidden rounded-xl border border-border-c bg-card">
+      <p
+        id="numa-examples-heading"
+        className="px-4 pt-3 pb-2 text-2xs font-semibold uppercase tracking-wide text-muted-fg"
+      >
+        {label}
+      </p>
+      <ul
+        role="list"
+        aria-labelledby="numa-examples-heading"
+        className="divide-y divide-border-c/60 border-t border-border-c/60"
+      >
         {items.map((ex) => (
-          <li key={ex} className="list-inside list-disc marker:text-border-c">
+          <li key={ex}>
             <button
               type="button"
               disabled={disabled}
               onClick={() => onPick(ex)}
-              className="break-words text-left text-xs text-fg underline decoration-border-c decoration-1 underline-offset-4 transition hover:text-primary hover:decoration-primary disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+              className="group flex min-h-[44px] w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-fg transition hover:bg-muted-bg/60 focus-visible:bg-muted-bg/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {ex}
+              <Sparkles
+                aria-hidden
+                className="h-3.5 w-3.5 shrink-0 text-primary/70 transition group-hover:text-primary"
+              />
+              <span className="min-w-0 flex-1 break-words">{ex}</span>
             </button>
           </li>
         ))}
