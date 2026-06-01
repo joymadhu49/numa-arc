@@ -82,7 +82,7 @@ export function ChainLogo({
       alt=""
       style={dim}
       onError={() => setFailed(true)}
-      className={cn('shrink-0 rounded-full bg-white/5 object-contain', className)}
+      className={cn('shrink-0 rounded-full bg-muted-bg object-contain', className)}
     />
   )
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useAccount } from 'wagmi'
 import { PortfolioCard, type PortfolioCardData } from '@/components/chat/cards/portfolio-card'
+import { Skeleton } from '@/components/ui/skeleton'
 
 /**
  * Loads the connected wallet's MULTICHAIN portfolio (grouped by chain, dust
@@ -53,18 +54,36 @@ export function PortfolioLoader(): ReactElement {
     )
   }
 
-  if (loading && !data) {
-    return (
-      <div className="space-y-2" aria-busy="true">
-        <div className="numa-shimmer h-20 rounded-xl" aria-hidden />
-        <div className="numa-shimmer h-32 rounded-xl" aria-hidden />
-      </div>
-    )
-  }
-
-  if (!data) {
-    return <div className="numa-shimmer h-32 rounded-xl" aria-hidden />
+  if (loading || !data) {
+    return <PortfolioSkeleton />
   }
 
   return <PortfolioCard data={data} />
+}
+
+/** Skeleton that mirrors the PortfolioCard shape (header + chain/token rows). */
+function PortfolioSkeleton() {
+  return (
+    <div
+      className="overflow-hidden rounded-xl border border-border-c bg-card"
+      aria-busy="true"
+      aria-label="Loading portfolio"
+    >
+      <div className="border-b border-border-c px-4 py-3">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="mt-2 h-7 w-40" />
+      </div>
+      <div className="space-y-3 p-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-6 w-6 rounded-full" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <Skeleton className="h-3 w-16" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }

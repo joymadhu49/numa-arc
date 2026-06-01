@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, type ReactElement } from 'react'
 import type { Address, Hex } from 'viem'
 import { formatUnits } from 'viem'
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Loader2, ShieldCheck } from 'lucide-react'
+import { FocusTrap } from 'focus-trap-react'
 import type { SimulateTxResult } from '@/lib/safety'
 import { RiskBadge } from './risk-badge'
 import { cn } from '@/lib/utils'
@@ -146,13 +147,27 @@ export function TxPreview({
   const changes = summary.balanceChanges ?? []
 
   return (
+    // Trap focus while reviewing; Esc cancels (but not mid-sign), and focus
+    // returns to the Confirm button that opened the modal on close.
+    <FocusTrap
+      focusTrapOptions={{
+        escapeDeactivates: () => !signing && !loading,
+        returnFocusOnDeactivate: true,
+        onDeactivate: onCancel,
+        fallbackFocus: '[data-tx-panel]',
+      }}
+    >
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="tx-preview-title"
     >
-      <div className="numa-card-in w-full max-w-md overflow-hidden rounded-2xl border border-border-c bg-popover shadow-2xl">
+      <div
+        data-tx-panel
+        tabIndex={-1}
+        className="numa-card-in w-full max-w-md overflow-hidden rounded-2xl border border-border-c bg-popover shadow-2xl focus:outline-none"
+      >
         <div className="flex items-center justify-between border-b border-border-c px-5 py-4">
           <h2 id="tx-preview-title" className="text-base font-semibold text-fg">
             Review transaction
@@ -171,7 +186,7 @@ export function TxPreview({
           {/* Simulated balance-change rows */}
           {changes.length > 0 ? (
             <div className="mb-4">
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-fg">
+              <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-fg">
                 Balance changes
               </div>
               <div className="space-y-1 rounded-lg border border-border-c bg-bg p-3">
@@ -202,7 +217,7 @@ export function TxPreview({
 
           {/* Risk panel: recipient / contract, approval scope, slippage, fee */}
           <div className="mb-4">
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-fg">
+            <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-fg">
               Details
             </div>
             <dl className="space-y-2 rounded-lg border border-border-c bg-bg p-3 text-sm">
@@ -284,7 +299,7 @@ export function TxPreview({
           ) : null}
 
           {simUnavailable && simulation === null ? (
-            <div className="flex items-start gap-1.5 rounded-lg border border-border-c bg-bg p-3 text-[11px] leading-relaxed text-muted-fg">
+            <div className="flex items-start gap-1.5 rounded-lg border border-border-c bg-bg p-3 text-2xs leading-relaxed text-muted-fg">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
               <span>
                 Pre-sign simulation is not available for this action — Circle App Kit
@@ -295,7 +310,7 @@ export function TxPreview({
               </span>
             </div>
           ) : !highRisk && warnings.length === 0 && !reverted && simulation !== null ? (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-fg">
+            <div className="flex items-center gap-1.5 text-2xs text-muted-fg">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" />
               Simulated safe. No risky permissions detected.
             </div>
@@ -346,5 +361,6 @@ export function TxPreview({
         </div>
       </div>
     </div>
+    </FocusTrap>
   )
 }

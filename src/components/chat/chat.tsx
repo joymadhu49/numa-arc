@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowUp, AlertTriangle, RotateCcw, Wallet, ShieldCheck } from 'lucide-react'
+import { ArrowUp, AlertTriangle, RotateCcw, Wallet, ShieldCheck, Network } from 'lucide-react'
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
@@ -10,6 +10,7 @@ import {
 import { useChat } from '@ai-sdk/react'
 import { ExampleChips } from './example-chips'
 import { Message, ThinkingRow, type NumaUIMessage, type SignToolOutput } from './message'
+import { NumaAvatar } from './numa-avatar'
 import { useAuth } from '@/lib/use-auth'
 import { AuthGate } from '@/components/auth/auth-gate'
 import { useTxExecutor } from '@/lib/tx-executor'
@@ -18,9 +19,11 @@ import { TxPreview } from '@/components/safety/tx-preview'
 import { WalletPill } from '@/components/sidebar/wallet-pill'
 import { NetworkSwitcher } from '@/components/sidebar/network-switcher'
 import { ChainLogo } from '@/components/ui/chain-logo'
-import { getActiveChains } from '@/chains/registry'
+import { getActiveChains, getChain } from '@/chains/registry'
 import { isSigningTool } from '@/ai/tools'
 import { classifyError } from '@/lib/errors'
+import { switchWalletChain } from '@/lib/chain-switch'
+import { toast } from 'sonner'
 
 /** A write action pending in the simulate→review→confirm modal. */
 interface PendingAction {
@@ -29,12 +32,16 @@ interface PendingAction {
   input: Record<string, unknown>
 }
 
-/** Follow-up suggestion chips shown after an assistant reply. */
+/**
+ * Follow-up suggestion chips shown after an assistant reply. Intentionally
+ * disjoint from the welcome EXAMPLES — those advertise capabilities, these
+ * nudge toward likely next actions after a successful turn.
+ */
 const FOLLOW_UPS: readonly string[] = [
-  'Show my portfolio',
-  'Top stablecoin yields',
-  'Trending tokens on Arc',
-  "What's the ETH price?",
+  'Check my token approvals',
+  'Bridge USDC to Base Sepolia',
+  'Show my LP positions',
+  'Scan a token for risk',
 ]
 
 /** True when a chat request failed because there's no valid wallet session
@@ -50,18 +57,28 @@ function isAuthError(error: Error): boolean {
  */
 function ConnectPrompt({
   auth,
+  onSignedIn,
 }: {
   auth: ReturnType<typeof useAuth>
+  onSignedIn?: () => void
 }) {
+  // The wallet being connected and the session being signed-in are distinct.
+  // Only call for a "connect" when there's genuinely no wallet; otherwise the
+  // wallet is already connected and just needs a fresh session signature.
+  const needsConnect = !auth.isConnected
   return (
-    <div className="flex gap-2.5 numa-card-in sm:gap-3">
+    <div className="flex gap-2.5 numa-card-in sm:gap-3" role="status" aria-live="polite">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-        <Wallet className="h-4 w-4" />
+        {needsConnect ? <Wallet className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
       </div>
       <div className="min-w-0 flex-1 rounded-xl border border-border-c bg-card px-3.5 py-3">
-        <p className="text-sm font-medium text-fg">Connect your wallet to chat</p>
+        <p className="text-sm font-medium text-fg">
+          {needsConnect ? 'Connect your wallet to chat' : 'Sign in to continue'}
+        </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-fg">
-          Numa needs a one-time wallet signature to start a session. It&apos;s free — no funds move.
+          {needsConnect
+            ? 'Connect a wallet to start a secure session — it’s free and moves no funds.'
+            : 'Your wallet is connected — sign a quick message to start your session. It’s free and moves no funds.'}
         </p>
         <div className="mt-2.5 flex flex-wrap gap-2">
           {!auth.isConnected ? (
@@ -85,7 +102,9 @@ function ConnectPrompt({
             <button
               type="button"
               disabled={auth.signing}
-              onClick={() => void auth.signIn()}
+              onClick={async () => {
+                if (await auth.signIn()) onSignedIn?.()
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg transition hover:brightness-110 disabled:opacity-60"
             >
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -102,8 +121,9 @@ function ConnectPrompt({
 /** Professional, retryable error card shown when a chat request fails. */
 function ChatError({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const c = classifyError(error)
+  const arcChain = getChain('arc-testnet')
   return (
-    <div className="flex gap-2.5 numa-card-in sm:gap-3">
+    <div className="flex gap-2.5 numa-card-in sm:gap-3" role="alert">
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-danger/40 bg-danger/10">
         <AlertTriangle className="h-4 w-4 text-danger" />
       </div>
@@ -112,14 +132,35 @@ function ChatError({ error, onRetry }: { error: Error; onRetry: () => void }) {
         {c.hint ? (
           <p className="mt-1 text-xs leading-relaxed text-muted-fg">{c.hint}</p>
         ) : null}
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-border-c bg-card px-3 py-1.5 text-xs font-medium text-fg transition hover:bg-muted-bg"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          Try again
-        </button>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {c.kind === 'chain_mismatch' && arcChain ? (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await switchWalletChain(arcChain)
+                  toast.success(`Switched to ${arcChain.name}`)
+                } catch (err) {
+                  toast.error('Couldn’t switch network', {
+                    description: classifyError(err).hint,
+                  })
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg transition hover:brightness-110"
+            >
+              <Network className="h-3.5 w-3.5" />
+              Switch to {arcChain.name}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border-c bg-card px-3 py-1.5 text-xs font-medium text-fg transition hover:bg-muted-bg"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Try again
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -265,6 +306,21 @@ export function Chat() {
         input: args,
         address: address as `0x${string}` | undefined,
       })
+      if (result.ok) {
+        toast.success('Transaction submitted', {
+          description: 'Broadcast to the network — track progress in the chat.',
+          action: result.explorerUrl
+            ? {
+                label: 'Explorer',
+                onClick: () => window.open(result.explorerUrl, '_blank', 'noopener,noreferrer'),
+              }
+            : undefined,
+        })
+      } else {
+        toast.error(result.error || 'Transaction failed', {
+          description: result.errorHint || undefined,
+        })
+      }
       const output: SignToolOutput = result.ok
         ? {
             ok: true,
@@ -282,6 +338,7 @@ export function Chat() {
       await addSignResult(toolName, toolCallId, output)
     } catch (e) {
       const c = classifyError(e)
+      toast.error(c.headline, { description: c.hint || undefined })
       await addSignResult(toolName, toolCallId, {
         ok: false,
         error: c.headline,
@@ -352,32 +409,39 @@ export function Chat() {
         ) : (
           <div className="mx-auto w-full max-w-xl px-3 py-4 sm:max-w-2xl sm:px-4 sm:py-5">
             {empty ? (
-              <div className="flex flex-col items-start gap-3 pt-4 sm:gap-4 sm:pt-8">
-                <h1 className="text-lg font-semibold tracking-tight text-fg sm:text-2xl">
-                  Welcome to Numa — the simplest way to use DeFi on Arc.
-                </h1>
-                <div className="space-y-3 text-xs leading-relaxed text-muted-fg sm:space-y-4 sm:text-sm">
-                  <p>
-                    New to Arc? You can ask me anything. Remember I&apos;m an AI, I don&apos;t judge.
-                    Whenever you&apos;re ready, I&apos;m here to help you do transactions with ease
-                    and confidence.
-                  </p>
-                  <p>
-                    Already a pro? You are about to experience a stablecoin-native L1 with USDC gas
-                    and sub-second finality. You can also bridge in from:
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg sm:gap-x-5 sm:text-sm">
-                    {getActiveChains().map((c) => (
-                      <span key={c.key} className="inline-flex items-center gap-2">
-                        <ChainLogo src={c.logo} name={c.name} chainKey={c.key} size={22} />
-                        {c.name}
-                      </span>
-                    ))}
-                  </div>
+              <div className="flex flex-col items-start gap-4 pt-4 sm:gap-5 sm:pt-8">
+                <NumaAvatar size={48} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold tracking-tight text-fg sm:text-2xl">
+                    Welcome to Numa — your stablecoin copilot on Arc
+                  </h1>
+                  <span className="inline-flex items-center rounded-full border border-border-c bg-muted-bg/40 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-fg">
+                    Testnet
+                  </span>
                 </div>
-                <div className="w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] leading-relaxed text-warning sm:text-xs">
-                  <span className="font-semibold">Warning:</span> Only bridge USDC
-                  from the supported source chains above. Other chains are not routed.
+                <p className="text-sm leading-relaxed text-muted-fg">
+                  Ask in plain English to check balances, swap, send, bridge USDC across testnets,
+                  and find yields. Every transaction previews and simulates before you sign.
+                </p>
+                <div className="w-full rounded-xl border border-border-c bg-card px-4 py-3">
+                  <p
+                    id="numa-networks-heading"
+                    className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted-fg"
+                  >
+                    Bridge USDC in or out across
+                  </p>
+                  <ul
+                    role="list"
+                    aria-labelledby="numa-networks-heading"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg sm:gap-x-4 sm:text-sm"
+                  >
+                    {getActiveChains().map((c) => (
+                      <li key={c.key} className="inline-flex items-center gap-2">
+                        <ChainLogo src={c.logo} name={c.name} chainKey={c.key} size={18} />
+                        <span className="break-words">{c.name}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
                 <ExampleChips onPick={(p) => submit(p)} disabled={loading} />
               </div>
@@ -390,6 +454,11 @@ export function Chat() {
                     active={loading && i === lastIndex && m.role === 'assistant'}
                     onConfirm={onConfirm}
                     confirmingId={confirmingId}
+                    onRegenerate={
+                      !loading && i === lastIndex && m.role === 'assistant'
+                        ? () => void regenerate()
+                        : undefined
+                    }
                   />
                 ))}
                 {status === 'submitted' && messages[lastIndex]?.role === 'user' ? (
@@ -408,7 +477,7 @@ export function Chat() {
                 ) : null}
                 {error && !loading ? (
                   isAuthError(error) ? (
-                    <ConnectPrompt auth={auth} />
+                    <ConnectPrompt auth={auth} onSignedIn={() => void regenerate()} />
                   ) : (
                     <ChatError error={error} onRetry={() => void regenerate()} />
                   )
@@ -430,12 +499,17 @@ export function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
+              aria-label="Message Numa"
               rows={1}
               placeholder={
                 signedIn
-                  ? 'Ask Numa anything about Arc, stablecoins, or your portfolio'
+                  ? 'Try: swap 10 USDC for EURC, or bridge to Base Sepolia'
                   : 'Sign in with your wallet to chat'
               }
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="send"
               className="min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 text-fg placeholder:text-muted-fg focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
               disabled={loading || !signedIn}
             />
@@ -448,7 +522,7 @@ export function Chat() {
               <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
             </button>
           </form>
-          <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-fg">
+          <p className="mt-2 text-center text-2xs leading-relaxed text-muted-fg">
             Numa can make mistakes and is not financial advice. Always review transactions before
             signing. Testnet only.
           </p>

@@ -48,7 +48,7 @@ export function TxStatusCard({
       icon={icon}
       title={headline}
       right={
-        <span className="inline-flex items-center gap-1 rounded-full border border-border-c bg-bg px-2 py-0.5 text-[10px] font-medium text-muted-fg">
+        <span className="inline-flex items-center gap-1 rounded-full border border-border-c bg-bg px-2 py-0.5 text-2xs font-medium text-muted-fg">
           Arc Testnet
         </span>
       }
@@ -71,7 +71,7 @@ export function TxStatusCard({
         ) : null}
 
         {hash ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-2xs">
             <span className="break-all font-mono text-muted-fg">
               {hash.slice(0, 14)}…{hash.slice(-6)}
             </span>

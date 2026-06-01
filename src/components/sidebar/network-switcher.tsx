@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Check, Search, Zap, X } from 'lucide-react'
 import { CHAINS, getChain, type ChainEntry } from '@/chains/registry'
 import { ChainLogo } from '@/components/ui/chain-logo'
+import { switchWalletChain } from '@/lib/chain-switch'
 import { cn } from '@/lib/utils'
 
 /**
@@ -39,31 +40,14 @@ function useActiveChainId() {
   return chainId
 }
 
-// PRESERVED: raw EIP-1193 switch with 4902 add-chain fallback.
+// Raw EIP-1193 switch with 4902 add-chain fallback, shared with the chat
+// "wrong network" recovery button. Rejections are intentionally swallowed here
+// (the user dismissed the wallet prompt — nothing to surface).
 async function switchChain(entry: ChainEntry) {
-  const eth = typeof window !== 'undefined' ? (window as any).ethereum : null
-  if (!eth) return
-  const hexId = '0x' + entry.chainId.toString(16)
   try {
-    await eth.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: hexId }],
-    })
-  } catch (err: any) {
-    if (err?.code === 4902) {
-      await eth.request({
-        method: 'wallet_addEthereumChain',
-        params: [
-          {
-            chainId: hexId,
-            chainName: entry.name,
-            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 6 },
-            rpcUrls: [entry.rpcUrl],
-            blockExplorerUrls: [entry.explorerUrl],
-          },
-        ],
-      })
-    }
+    await switchWalletChain(entry)
+  } catch {
+    /* no-op */
   }
 }
 
@@ -92,12 +76,12 @@ function NetworkRow({ entry, active, switchable, highlighted, onSelect }: RowPro
       <ChainLogo src={entry.logo} name={entry.name} chainKey={entry.key} size={24} />
       <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>
       {entry.fastTransfer ? (
-        <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+        <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-2xs font-semibold text-primary">
           <Zap className="h-2.5 w-2.5" /> Fast
         </span>
       ) : null}
       {!switchable ? (
-        <span className="rounded-full bg-muted-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-fg">
+        <span className="rounded-full bg-muted-bg px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-fg">
           soon
         </span>
       ) : null}
@@ -216,7 +200,7 @@ export function NetworkSwitcher() {
       <div className="numa-scroll flex-1 overflow-y-auto p-2">
         {filtered.testnet.length > 0 ? (
           <div className="mb-1">
-            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-fg">
+            <div className="px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-muted-fg">
               Testnet
             </div>
             {filtered.testnet.map((entry) => {
@@ -238,7 +222,7 @@ export function NetworkSwitcher() {
 
         {filtered.mainnet.length > 0 ? (
           <div>
-            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-fg">
+            <div className="px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-muted-fg">
               Mainnet
             </div>
             {filtered.mainnet.map((entry) => {
@@ -272,6 +256,7 @@ export function NetworkSwitcher() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={active ? `Network: ${active.name}. Change network.` : 'Select network'}
         className="inline-flex items-center gap-1.5 rounded-lg border border-border-c bg-card px-2.5 py-1.5 text-xs font-medium text-fg transition hover:bg-muted-bg"
       >
         {active ? (

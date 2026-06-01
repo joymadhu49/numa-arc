@@ -58,12 +58,14 @@
   --accent: 203 213 225;
   --border: 226 232 240;
 
-  --bg: 0.99 0.003 256;
-  --card: 0.975 0.005 256;
+  /* Off-white page so white cards/popovers lift off the surface. */
+  --bg: 0.98 0.004 256;
+  --card: 1 0 0;
   --popover: 1 0 0;
   --fg: 0.22 0.02 256;
-  --muted-bg: 0.95 0.006 256;
-  --muted-fg: 0.5 0.02 256;
+  --muted-bg: 0.955 0.006 256;
+  /* Darkened from 0.5 → 0.46 so muted text clears WCAG AA on white cards. */
+  --muted-fg: 0.46 0.02 256;
   --border-c: 0.9 0.008 256;
   --ring: 0.55 0.16 255;
   --primary: 0.55 0.17 255;
@@ -80,6 +82,8 @@ html,
 body {
   background-color: rgb(var(--background));
   color: rgb(var(--foreground));
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Inter character variants: single-story a (cv11) + alternates (ss01). */
   font-feature-settings: 'cv11', 'ss01';
 }
 

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Github, History, Home, PieChart, Settings, Bot, Send, Twitter } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 interface NavItem {
   href: string
@@ -72,11 +73,23 @@ export function Sidebar() {
             return (
               <li key={item.href}>
                 {item.href === '/' ? (
-                  <button type="button" onClick={newChat} className={classes}>
+                  <button
+                    type="button"
+                    onClick={newChat}
+                    className={classes}
+                    aria-label={item.label}
+                    title={item.label}
+                  >
                     {label}
                   </button>
                 ) : (
-                  <Link href={item.href} className={classes}>
+                  <Link
+                    href={item.href}
+                    className={classes}
+                    aria-label={item.label}
+                    title={item.label}
+                    aria-current={active ? 'page' : undefined}
+                  >
                     {label}
                   </Link>
                 )}
@@ -87,6 +100,7 @@ export function Sidebar() {
       </nav>
 
       <div className="flex flex-col items-center gap-2 border-t border-border-c px-2 py-3 sm:gap-3 md:flex-row md:px-4">
+        <ThemeToggle variant="cycle" className="md:-ml-1.5" />
         <a
           href="https://x.com/zx_joy_"
           target="_blank"
