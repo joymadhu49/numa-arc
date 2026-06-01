@@ -1,77 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useSyncExternalStore, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAccount, useConnect, useDisconnect, useSignMessage } from 'wagmi'
 import { classifyError } from '@/lib/errors'
 
-const STORAGE_KEY = 'arcwise.siwe'
+/**
+ * Wallet auth backed by a SERVER-VERIFIED SIWE session (httpOnly cookie).
+ *
+ * Flow: connect → GET /api/auth/nonce (server-issued challenge) → sign it →
+ * POST /api/auth/verify (server recovers the signer + sets the session cookie).
+ * `signedIn` reflects the SERVER session (read via GET /api/auth/session), NOT
+ * localStorage — so it can't be spoofed and gates the LLM endpoint for real.
+ */
 
-interface SiweRecord {
+interface SessionResponse {
+  address: string | null
+}
+
+interface NonceResponse {
   address: string
-  signature: string
-  message: string
+  nonce: string
   issuedAt: string
-}
-
-function loadRecord(): SiweRecord | null {
-  if (typeof window === 'undefined') return null
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as SiweRecord
-  } catch {
-    return null
-  }
-}
-
-function saveRecord(rec: SiweRecord): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rec))
-}
-
-function clearRecord(): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.removeItem(STORAGE_KEY)
-}
-
-const signedAddressListeners = new Set<() => void>()
-let signedAddressValue: string | null = null
-let signedAddressHydrated = false
-
-function readSignedAddress(): string | null {
-  if (typeof window === 'undefined') return null
-  if (!signedAddressHydrated) {
-    const rec = loadRecord()
-    signedAddressValue = rec?.address ? rec.address.toLowerCase() : null
-    signedAddressHydrated = true
-  }
-  return signedAddressValue
-}
-
-function setSignedAddressGlobal(next: string | null): void {
-  signedAddressValue = next
-  signedAddressHydrated = true
-  signedAddressListeners.forEach((l) => l())
-}
-
-function subscribeSignedAddress(listener: () => void): () => void {
-  signedAddressListeners.add(listener)
-  return () => {
-    signedAddressListeners.delete(listener)
-  }
-}
-
-function buildMessage(address: string, nonce: string, issuedAt: string): string {
-  return [
-    'Sign in to Numa',
-    '',
-    `Address: ${address}`,
-    `Chain: Arc Testnet (5042002)`,
-    `Nonce: ${nonce}`,
-    `Issued At: ${issuedAt}`,
-    '',
-    'By signing, you authorize this session. No funds move.',
-  ].join('\n')
+  exp: number
+  sig: string
+  message: string
 }
 
 export interface AuthState {
@@ -93,20 +45,31 @@ export function useAuth(): AuthState {
   const { disconnect } = useDisconnect()
   const { signMessageAsync } = useSignMessage()
 
-  const signedAddress = useSyncExternalStore(
-    subscribeSignedAddress,
-    readSignedAddress,
-    () => null,
-  )
+  const [sessionAddress, setSessionAddress] = useState<string | null>(null)
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
-  useEffect(() => {
-    if (address && signedAddress && signedAddress !== address.toLowerCase()) {
-      clearRecord()
-      setSignedAddressGlobal(null)
+  // Hydrate signed-in state from the server session cookie on mount.
+  const refreshSession = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/session', { cache: 'no-store' })
+      const json = (await res.json()) as SessionResponse
+      setSessionAddress(json.address ? json.address.toLowerCase() : null)
+    } catch {
+      setSessionAddress(null)
     }
-  }, [address, signedAddress])
+  }, [])
+
+  useEffect(() => {
+    void refreshSession()
+  }, [refreshSession])
+
+  // If the connected wallet no longer matches the session, drop the session.
+  useEffect(() => {
+    if (address && sessionAddress && sessionAddress !== address.toLowerCase()) {
+      setSessionAddress(null)
+    }
+  }, [address, sessionAddress])
 
   const signIn = useCallback(async () => {
     if (!address) {
@@ -116,12 +79,32 @@ export function useAuth(): AuthState {
     setSigning(true)
     setError(undefined)
     try {
-      const nonce = Math.random().toString(36).slice(2, 10)
-      const issuedAt = new Date().toISOString()
-      const message = buildMessage(address, nonce, issuedAt)
-      const signature = await signMessageAsync({ message, account: address })
-      saveRecord({ address, signature, message, issuedAt })
-      setSignedAddressGlobal(address.toLowerCase())
+      // 1) Server-issued nonce + canonical message.
+      const nonceRes = await fetch(`/api/auth/nonce?address=${address}`, { cache: 'no-store' })
+      if (!nonceRes.ok) throw new Error('Could not start sign-in. Try again.')
+      const challenge = (await nonceRes.json()) as NonceResponse
+
+      // 2) Sign the server's message.
+      const signature = await signMessageAsync({ message: challenge.message, account: address })
+
+      // 3) Server verifies + sets the httpOnly session cookie.
+      const verifyRes = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          message: challenge.message,
+          nonce: challenge.nonce,
+          exp: challenge.exp,
+          sig: challenge.sig,
+          signature,
+        }),
+      })
+      const verifyJson = (await verifyRes.json()) as { ok?: boolean; error?: string }
+      if (!verifyRes.ok || !verifyJson.ok) {
+        throw new Error(verifyJson.error ?? 'Sign-in verification failed.')
+      }
+      setSessionAddress(address.toLowerCase())
     } catch (e) {
       setError(classifyError(e).headline)
     } finally {
@@ -130,12 +113,12 @@ export function useAuth(): AuthState {
   }, [address, signMessageAsync])
 
   const signOut = useCallback(() => {
-    clearRecord()
-    setSignedAddressGlobal(null)
+    setSessionAddress(null)
+    void fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {})
     disconnect()
   }, [disconnect])
 
-  const signedIn = !!signedAddress && (!address || signedAddress === address.toLowerCase())
+  const signedIn = !!sessionAddress && (!address || sessionAddress === address.toLowerCase())
 
   return {
     address,

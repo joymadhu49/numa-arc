@@ -7,8 +7,8 @@ interface NumaAvatarProps {
 
 export function NumaAvatar({ active = false, size = 36 }: NumaAvatarProps) {
   const ringClass = active
-    ? 'ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
-    : 'ring-1 ring-neutral-700'
+    ? 'ring-2 ring-[#2775CA]/50 shadow-[0_0_12px_rgba(39,117,202,0.40)]'
+    : 'ring-1 ring-border-c'
   return (
     <div
       className={
@@ -85,9 +85,9 @@ export function NumaAvatar({ active = false, size = 36 }: NumaAvatarProps) {
         </g>
         {active ? (
           <>
-            <circle cx="20" cy="20" r="2" fill="#34d399" className="numa-spark numa-spark-1" />
-            <circle cx="130" cy="22" r="1.6" fill="#34d399" className="numa-spark numa-spark-2" />
-            <circle cx="128" cy="120" r="1.8" fill="#34d399" className="numa-spark numa-spark-3" />
+            <circle cx="20" cy="20" r="2" fill="#3b8fe0" className="numa-spark numa-spark-1" />
+            <circle cx="130" cy="22" r="1.6" fill="#3b8fe0" className="numa-spark numa-spark-2" />
+            <circle cx="128" cy="120" r="1.8" fill="#3b8fe0" className="numa-spark numa-spark-3" />
           </>
         ) : null}
       </svg>

@@ -1,5 +1,5 @@
 {
-  "name": "arcwise",
+  "name": "numa",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,10 +10,13 @@
     "deploy:numa-agent": "node scripts/deploy-numa-agent.mjs"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.195",
     "@anthropic-ai/sdk": "^0.30.0",
-    "@circle-fin/adapter-viem-v2": "latest",
-    "@circle-fin/app-kit": "latest",
+    "@circle-fin/adapter-viem-v2": "1.11.0",
+    "@circle-fin/app-kit": "1.5.1",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
     "@tanstack/react-query": "^5.59.0",
+    "ai": "^6.0.193",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "next": "^15.5.18",
@@ -22,6 +25,7 @@
     "tailwind-merge": "^2.5.4",
     "viem": "^2.21.0",
     "wagmi": "^2.12.0",
+    "zod": "^4.4.3",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

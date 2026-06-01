@@ -2,12 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: 10 10 10;
-  --foreground: 245 245 245;
-  --muted: 38 38 38;
-  --accent: 64 64 64;
-  --border: 38 38 38;
+/*
+ * Numa design tokens — "calm precision": a trustworthy financial-blue copilot.
+ *
+ * Two token systems coexist:
+ *  1) Legacy RGB tokens (--background/--foreground/--muted/--accent/--border)
+ *     kept working so existing utilities like `border-border` never break.
+ *  2) Semantic OKLCH tokens (bg/card/popover/fg/muted/border/ring/primary/...)
+ *     mapped into Tailwind so bg-card / text-muted-fg / bg-primary / border-border
+ *     / ring-ring all resolve.
+ *
+ * PRIMARY = USDC blue (~#2775CA). Surface depth: bg < card < popover.
+ * Dark is the default (html.dark). A light scope is provided for completeness.
+ */
+
+:root,
+.dark {
+  /* --- Legacy RGB tokens (DO NOT REMOVE — utilities depend on these) --- */
+  --background: 8 10 14;
+  --foreground: 244 246 250;
+  --muted: 30 34 42;
+  --accent: 52 58 70;
+  --border: 32 37 47;
+
+  /* --- Semantic OKLCH tokens --- */
+  /* Surface depth: near-black bg < lighter card < lighter-still popover */
+  --bg: 0.16 0.012 256;
+  --card: 0.205 0.014 256;
+  --popover: 0.245 0.015 256;
+
+  --fg: 0.97 0.005 256;
+  --muted-bg: 0.255 0.015 256;
+  --muted-fg: 0.66 0.018 256;
+
+  --border-c: 0.30 0.016 256;
+  --ring: 0.62 0.16 255;
+
+  /* USDC blue primary */
+  --primary: 0.55 0.17 255;
+  --primary-fg: 0.99 0.01 255;
+
+  --success: 0.72 0.17 152;
+  --success-fg: 0.16 0.04 152;
+  --warning: 0.78 0.16 78;
+  --warning-fg: 0.2 0.05 78;
+  --danger: 0.62 0.21 25;
+  --danger-fg: 0.99 0.01 25;
+}
+
+/* Optional light scope (app ships dark-by-default via html.dark). */
+.light {
+  --background: 248 250 252;
+  --foreground: 15 23 42;
+  --muted: 226 232 240;
+  --accent: 203 213 225;
+  --border: 226 232 240;
+
+  --bg: 0.99 0.003 256;
+  --card: 0.975 0.005 256;
+  --popover: 1 0 0;
+  --fg: 0.22 0.02 256;
+  --muted-bg: 0.95 0.006 256;
+  --muted-fg: 0.5 0.02 256;
+  --border-c: 0.9 0.008 256;
+  --ring: 0.55 0.16 255;
+  --primary: 0.55 0.17 255;
+  --primary-fg: 0.99 0.01 255;
+  --success: 0.6 0.15 152;
+  --success-fg: 0.99 0.01 152;
+  --warning: 0.7 0.15 78;
+  --warning-fg: 0.2 0.05 78;
+  --danger: 0.58 0.21 25;
+  --danger-fg: 0.99 0.01 25;
 }
 
 html,
@@ -19,4 +85,73 @@ body {
 
 * {
   border-color: rgb(var(--border));
+}
+
+/* Visible keyboard focus everywhere using the ring token. */
+:focus-visible {
+  outline: 2px solid oklch(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Thin, calm scrollbars. */
+.numa-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--border-c)) transparent;
+}
+.numa-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.numa-scroll::-webkit-scrollbar-thumb {
+  background-color: oklch(var(--border-c));
+  border-radius: 9999px;
+}
+.numa-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Card entrance — subtle rise + fade for generative-UI cards. */
+@keyframes numa-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.numa-card-in {
+  animation: numa-card-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Shimmer for skeletons. */
+@keyframes numa-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.numa-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(var(--muted-bg)) 0%,
+    oklch(var(--card)) 50%,
+    oklch(var(--muted-bg)) 100%
+  );
+  background-size: 200% 100%;
+  animation: numa-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

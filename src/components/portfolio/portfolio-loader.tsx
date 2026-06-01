@@ -2,64 +2,41 @@
 
 import { useEffect, useState, type ReactElement } from 'react'
 import { useAccount } from 'wagmi'
-import { PortfolioCard } from './portfolio-card'
-import type { TokenBalance } from '@/ai/tools/portfolio'
-import { ARC_TESTNET_CHAIN_ID } from '@/lib/tokens'
+import { PortfolioCard, type PortfolioCardData } from '@/components/chat/cards/portfolio-card'
 
-interface PortfolioState {
-  balances: TokenBalance[]
-  totalUsd: number
-  loading: boolean
-  error?: string
-}
-
+/**
+ * Loads the connected wallet's MULTICHAIN portfolio (grouped by chain, dust
+ * filtered, live USD) and renders the shared chain-grouped PortfolioCard — the
+ * same polished card used in chat, so the page and chat never diverge.
+ */
 export function PortfolioLoader(): ReactElement {
   const { address, isConnected } = useAccount()
-  const [state, setState] = useState<PortfolioState>({
-    balances: [],
-    totalUsd: 0,
-    loading: false,
-  })
+  const [data, setData] = useState<PortfolioCardData | null>(null)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!address) {
-      setState({ balances: [], totalUsd: 0, loading: false })
+      setData(null)
       return
     }
     let cancelled = false
-    setState((s) => ({ ...s, loading: true, error: undefined }))
+    setLoading(true)
     ;(async () => {
       try {
         const res = await fetch('/api/tools', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            tool: 'getPortfolio',
-            args: { address, chainId: ARC_TESTNET_CHAIN_ID },
-            address,
-          }),
+          // grouped:true → API returns the multichain PortfolioCardData directly.
+          body: JSON.stringify({ tool: 'getPortfolio', args: { address, grouped: true }, address }),
         })
-        const json = (await res.json()) as
-          | { ok: true; data: { balances: TokenBalance[]; totalUsd: number } }
-          | { ok: false; error: string }
+        const json = (await res.json()) as PortfolioCardData
         if (cancelled) return
-        if (json.ok) {
-          setState({
-            balances: json.data.balances,
-            totalUsd: json.data.totalUsd,
-            loading: false,
-          })
-        } else {
-          setState({ balances: [], totalUsd: 0, loading: false, error: json.error })
-        }
+        setData(json)
       } catch (e) {
         if (cancelled) return
-        setState({
-          balances: [],
-          totalUsd: 0,
-          loading: false,
-          error: e instanceof Error ? e.message : 'Failed to load portfolio',
-        })
+        setData({ ok: false, error: e instanceof Error ? e.message : 'Failed to load portfolio' })
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     })()
     return () => {
@@ -69,26 +46,25 @@ export function PortfolioLoader(): ReactElement {
 
   if (!isConnected || !address) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center">
-        <p className="text-sm text-neutral-300">
-          Connect a wallet to view your portfolio.
-        </p>
-        <p className="mt-2 text-xs text-neutral-500">
-          Use the connect button in the bottom-left.
-        </p>
+      <div className="rounded-2xl border border-border-c bg-card p-8 text-center">
+        <p className="text-sm text-fg">Connect a wallet to view your portfolio.</p>
+        <p className="mt-2 text-xs text-muted-fg">Use the connect button in the bottom-left.</p>
       </div>
     )
   }
 
-  return (
-    <div className="space-y-3">
-      <PortfolioCard
-        address={address}
-        balances={state.balances}
-        totalUsd={state.totalUsd}
-        loading={state.loading}
-      />
-      {state.error ? <p className="text-xs text-red-400">{state.error}</p> : null}
-    </div>
-  )
+  if (loading && !data) {
+    return (
+      <div className="space-y-2" aria-busy="true">
+        <div className="numa-shimmer h-20 rounded-xl" aria-hidden />
+        <div className="numa-shimmer h-32 rounded-xl" aria-hidden />
+      </div>
+    )
+  }
+
+  if (!data) {
+    return <div className="numa-shimmer h-32 rounded-xl" aria-hidden />
+  }
+
+  return <PortfolioCard data={data} />
 }

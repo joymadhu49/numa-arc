@@ -1,163 +1,300 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Check } from 'lucide-react'
-import { numberToHex } from 'viem'
-import { baseSepolia, sepolia } from 'viem/chains'
-import { useAccount, useChainId, useConfig } from 'wagmi'
-import { arcTestnet } from '@/chains/arc'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Check, Search, Zap, X } from 'lucide-react'
+import { CHAINS, getChain, type ChainEntry } from '@/chains/registry'
+import { ChainLogo } from '@/components/ui/chain-logo'
 import { cn } from '@/lib/utils'
-import { classifyError } from '@/lib/errors'
 
-interface ChainOption {
-  id: number
-  name: string
-  short: string
-  logo: string
-  chain: typeof arcTestnet | typeof baseSepolia | typeof sepolia
+/**
+ * Chains the connected wallet can actually switch to right now (testnets that
+ * the app routes). Mainnet rows are shown disabled with a "soon" tag.
+ */
+// Testnet-only (mainnet-ready): every ACTIVE (testnet) registry chain is
+// switchable. Keys MUST match registry slugs (hyphenated, e.g. 'arc-testnet').
+// Switching uses raw EIP-1193 wallet_switchEthereumChain + 4902 add fallback,
+// so any active chain the wallet can add is selectable. Mainnet rows stay
+// disabled with a "soon" tag.
+const SWITCHABLE = CHAINS.filter((c) => c.testnet).map((c) => c.key)
+
+function useActiveChainId() {
+  const [chainId, setChainId] = useState<number | null>(null)
+  useEffect(() => {
+    const eth = typeof window !== 'undefined' ? (window as any).ethereum : null
+    if (!eth) return
+    let cancelled = false
+    eth
+      .request({ method: 'eth_chainId' })
+      .then((hex: string) => {
+        if (!cancelled) setChainId(parseInt(hex, 16))
+      })
+      .catch(() => {})
+    const onChainChanged = (hex: string) => setChainId(parseInt(hex, 16))
+    eth.on?.('chainChanged', onChainChanged)
+    return () => {
+      cancelled = true
+      eth.removeListener?.('chainChanged', onChainChanged)
+    }
+  }, [])
+  return chainId
 }
 
-const CHAINS: ChainOption[] = [
-  {
-    id: arcTestnet.id,
-    name: 'Arc Testnet',
-    short: 'Arc',
-    logo: 'https://pbs.twimg.com/profile_images/1955238194443849732/sHyVRItm_400x400.jpg',
-    chain: arcTestnet,
-  },
-  {
-    id: sepolia.id,
-    name: 'Ethereum Sepolia',
-    short: 'Sepolia',
-    logo: 'https://coin-images.coingecko.com/coins/images/279/large/ethereum.png?1696501628',
-    chain: sepolia,
-  },
-  {
-    id: baseSepolia.id,
-    name: 'Base Sepolia',
-    short: 'Base',
-    logo: 'https://pbs.twimg.com/profile_images/1945608199500910592/rnk6ixxH_400x400.jpg',
-    chain: baseSepolia,
-  },
-]
+// PRESERVED: raw EIP-1193 switch with 4902 add-chain fallback.
+async function switchChain(entry: ChainEntry) {
+  const eth = typeof window !== 'undefined' ? (window as any).ethereum : null
+  if (!eth) return
+  const hexId = '0x' + entry.chainId.toString(16)
+  try {
+    await eth.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: hexId }],
+    })
+  } catch (err: any) {
+    if (err?.code === 4902) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            chainId: hexId,
+            chainName: entry.name,
+            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 6 },
+            rpcUrls: [entry.rpcUrl],
+            blockExplorerUrls: [entry.explorerUrl],
+          },
+        ],
+      })
+    }
+  }
+}
+
+interface RowProps {
+  entry: ChainEntry
+  active: boolean
+  switchable: boolean
+  highlighted: boolean
+  onSelect: () => void
+}
+
+function NetworkRow({ entry, active, switchable, highlighted, onSelect }: RowProps) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={active}
+      disabled={!switchable}
+      onClick={onSelect}
+      className={cn(
+        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition',
+        switchable ? 'text-fg hover:bg-muted-bg' : 'cursor-not-allowed text-muted-fg',
+        highlighted && switchable ? 'bg-muted-bg' : '',
+      )}
+    >
+      <ChainLogo src={entry.logo} name={entry.name} chainKey={entry.key} size={24} />
+      <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>
+      {entry.fastTransfer ? (
+        <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+          <Zap className="h-2.5 w-2.5" /> Fast
+        </span>
+      ) : null}
+      {!switchable ? (
+        <span className="rounded-full bg-muted-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-fg">
+          soon
+        </span>
+      ) : null}
+      {active ? <Check className="h-4 w-4 shrink-0 text-success" /> : null}
+    </button>
+  )
+}
 
 export function NetworkSwitcher() {
-  const { isConnected } = useAccount()
-  const chainId = useChainId()
-  const config = useConfig()
+  const activeChainId = useActiveChainId()
   const [open, setOpen] = useState(false)
-  const [switching, setSwitching] = useState<number | null>(null)
-  const [switchError, setSwitchError] = useState<string | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [highlight, setHighlight] = useState(0)
+  const ref = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const active = activeChainId ? getChain(activeChainId) : null
+
+  // Registry-driven: all chains, grouped, filtered by query.
+  const all = useMemo(() => [...CHAINS] as ChainEntry[], [])
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const rows = q
+      ? all.filter((e) => e.name.toLowerCase().includes(q) || e.key.toLowerCase().includes(q))
+      : all
+    const mainnet = rows.filter((e) => !e.testnet)
+    const testnet = rows.filter((e) => e.testnet)
+    return { mainnet, testnet }
+  }, [all, query])
+
+  // Flat list of switchable rows for keyboard navigation.
+  const flatSwitchable = useMemo(
+    () =>
+      [...filtered.testnet, ...filtered.mainnet].filter((e) => SWITCHABLE.includes(e.key)),
+    [filtered],
+  )
 
   useEffect(() => {
-    const onClick = (e: MouseEvent) => {
+    function onClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
-  const current = CHAINS.find((c) => c.id === chainId) ?? CHAINS[0]
+  useEffect(() => {
+    if (open) {
+      setQuery('')
+      setHighlight(0)
+      // Focus search shortly after open (next paint).
+      const t = setTimeout(() => inputRef.current?.focus(), 30)
+      return () => clearTimeout(t)
+    }
+  }, [open])
 
-  async function switchTo(target: ChainOption) {
-    setSwitching(target.id)
-    setSwitchError(null)
-    try {
-      const connection = config.state.connections.get(config.state.current ?? '')
-      const connector = connection?.connector ?? config.connectors[0]
-      if (!connector) {
-        setSwitchError('Wallet not connected')
-        return
-      }
-      const provider = (await connector.getProvider()) as {
-        request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
-      }
-      try {
-        await provider.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: numberToHex(target.id) }],
-        })
-      } catch (e: unknown) {
-        const code = (e as { code?: number })?.code
-        if (code === 4902) {
-          try {
-            await provider.request({
-              method: 'wallet_addEthereumChain',
-              params: [
-                {
-                  chainId: numberToHex(target.id),
-                  chainName: target.chain.name,
-                  nativeCurrency: target.chain.nativeCurrency,
-                  rpcUrls: target.chain.rpcUrls.default.http,
-                  blockExplorerUrls: target.chain.blockExplorers
-                    ? [target.chain.blockExplorers.default.url]
-                    : undefined,
-                },
-              ],
-            })
-          } catch (addErr) {
-            setSwitchError(classifyError(addErr).headline)
-          }
-        } else {
-          setSwitchError(classifyError(e).headline)
-        }
-      }
-    } finally {
-      setSwitching(null)
+  function choose(entry: ChainEntry) {
+    if (!SWITCHABLE.includes(entry.key)) return
+    void switchChain(entry)
+    setOpen(false)
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
       setOpen(false)
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight((h) => Math.min(h + 1, Math.max(flatSwitchable.length - 1, 0)))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight((h) => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const target = flatSwitchable[highlight]
+      if (target) choose(target)
     }
   }
 
+  const panel = (
+    <div
+      className="flex h-full flex-col"
+      role="listbox"
+      aria-label="Select network"
+      onKeyDown={onKeyDown}
+    >
+      <div className="flex items-center justify-between border-b border-border-c px-3 py-2 md:hidden">
+        <span className="text-sm font-semibold text-fg">Select network</span>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={() => setOpen(false)}
+          className="rounded-md p-1 text-muted-fg hover:bg-muted-bg hover:text-fg"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="border-b border-border-c p-2">
+        <div className="flex items-center gap-2 rounded-lg border border-border-c bg-bg px-2.5 py-1.5">
+          <Search className="h-4 w-4 shrink-0 text-muted-fg" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setHighlight(0)
+            }}
+            placeholder="Search networks…"
+            className="w-full bg-transparent text-sm text-fg placeholder:text-muted-fg focus:outline-none"
+            aria-label="Search networks"
+          />
+        </div>
+      </div>
+
+      <div className="numa-scroll flex-1 overflow-y-auto p-2">
+        {filtered.testnet.length > 0 ? (
+          <div className="mb-1">
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-fg">
+              Testnet
+            </div>
+            {filtered.testnet.map((entry) => {
+              const switchable = SWITCHABLE.includes(entry.key)
+              const flatIdx = flatSwitchable.findIndex((e) => e.key === entry.key)
+              return (
+                <NetworkRow
+                  key={entry.key}
+                  entry={entry}
+                  active={activeChainId === entry.chainId}
+                  switchable={switchable}
+                  highlighted={flatIdx === highlight}
+                  onSelect={() => choose(entry)}
+                />
+              )
+            })}
+          </div>
+        ) : null}
+
+        {filtered.mainnet.length > 0 ? (
+          <div>
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-fg">
+              Mainnet
+            </div>
+            {filtered.mainnet.map((entry) => {
+              const switchable = SWITCHABLE.includes(entry.key)
+              const flatIdx = flatSwitchable.findIndex((e) => e.key === entry.key)
+              return (
+                <NetworkRow
+                  key={entry.key}
+                  entry={entry}
+                  active={activeChainId === entry.chainId}
+                  switchable={switchable}
+                  highlighted={flatIdx === highlight}
+                  onSelect={() => choose(entry)}
+                />
+              )
+            })}
+          </div>
+        ) : null}
+
+        {filtered.testnet.length === 0 && filtered.mainnet.length === 0 ? (
+          <div className="px-2 py-6 text-center text-xs text-muted-fg">No networks found.</div>
+        ) : null}
+      </div>
+    </div>
+  )
+
   return (
-    <div ref={ref} className="relative">
+    <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        disabled={!isConnected}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-2.5"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border-c bg-card px-2.5 py-1.5 text-xs font-medium text-fg transition hover:bg-muted-bg"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={current.logo} alt={current.name} className="h-4 w-4 rounded-full" />
-        <span className="hidden uppercase tracking-wider sm:inline">{current.short}</span>
-        <ChevronDown className="h-3 w-3 text-neutral-400" />
+        {active ? (
+          <>
+            <ChainLogo src={active.logo} name={active.name} chainKey={active.key} size={16} />
+            <span className="hidden sm:inline">{active.name}</span>
+          </>
+        ) : (
+          <span>Select network</span>
+        )}
+        <ChevronDown className="h-3.5 w-3.5 text-muted-fg" />
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 w-56 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 shadow-lg">
-          <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-neutral-500">
-            Switch network
+        <>
+          {/* Desktop / tablet: anchored popover. */}
+          <div className="absolute right-0 z-50 mt-2 hidden max-h-[70vh] w-72 overflow-hidden rounded-xl border border-border-c bg-popover shadow-xl md:flex md:flex-col">
+            {panel}
           </div>
-          {switchError ? (
-            <div className="border-b border-red-900/60 bg-red-950/40 px-3 py-2 text-[11px] text-red-200">
-              {switchError}
-            </div>
-          ) : null}
-          {CHAINS.map((c) => {
-            const active = c.id === chainId
-            const pending = switching === c.id
-            return (
-              <button
-                key={c.id}
-                type="button"
-                disabled={pending}
-                onClick={() => void switchTo(c)}
-                className={cn(
-                  'flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors',
-                  active ? 'bg-neutral-900 text-white' : 'text-neutral-200 hover:bg-neutral-900',
-                )}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={c.logo} alt={c.name} className="h-5 w-5 rounded-full" />
-                <span className="flex-1">{c.name}</span>
-                {active ? <Check className="h-3.5 w-3.5 text-white" /> : null}
-                {pending ? (
-                  <span className="text-[10px] text-neutral-400">switching…</span>
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
+
+          {/* Mobile: full-screen sheet. */}
+          <div className="fixed inset-0 z-50 flex flex-col bg-bg md:hidden">{panel}</div>
+        </>
       ) : null}
     </div>
   )

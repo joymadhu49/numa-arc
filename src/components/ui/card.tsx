@@ -1,64 +1,32 @@
-import { forwardRef, type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
+import type { HTMLAttributes } from 'react'
 
-export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...rest }, ref) => (
+export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
     <div
-      ref={ref}
-      className={cn(
-        'rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-100 shadow-sm',
-        className,
-      )}
-      {...rest}
+      className={cn('rounded-xl border border-border-c bg-card shadow-sm', className)}
+      {...props}
     />
-  ),
-)
-Card.displayName = 'Card'
+  )
+}
 
-export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...rest }, ref) => (
-    <div
-      ref={ref}
-      className={cn('flex flex-col gap-1.5 border-b border-neutral-800 p-4', className)}
-      {...rest}
-    />
-  ),
-)
-CardHeader.displayName = 'CardHeader'
+export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('border-b border-border-c px-3 py-2', className)} {...props} />
+}
 
-export const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...rest }, ref) => (
-    <h3
-      ref={ref}
-      className={cn('text-sm font-semibold tracking-tight text-neutral-100', className)}
-      {...rest}
-    />
-  ),
-)
-CardTitle.displayName = 'CardTitle'
+export function CardTitle({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <h3 className={cn('text-sm font-semibold text-fg', className)} {...props} />
+}
 
-export const CardDescription = forwardRef<
-  HTMLParagraphElement,
-  HTMLAttributes<HTMLParagraphElement>
->(({ className, ...rest }, ref) => (
-  <p ref={ref} className={cn('text-xs text-neutral-400', className)} {...rest} />
-))
-CardDescription.displayName = 'CardDescription'
+// Kept for back-compat: settings/history pages (outside ownership) import this.
+export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('text-xs text-muted-fg', className)} {...props} />
+}
 
-export const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...rest }, ref) => (
-    <div ref={ref} className={cn('p-4', className)} {...rest} />
-  ),
-)
-CardContent.displayName = 'CardContent'
+export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('px-3 py-2.5', className)} {...props} />
+}
 
-export const CardFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...rest }, ref) => (
-    <div
-      ref={ref}
-      className={cn('flex items-center border-t border-neutral-800 p-4', className)}
-      {...rest}
-    />
-  ),
-)
-CardFooter.displayName = 'CardFooter'
+export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('border-t border-border-c px-3 py-2.5', className)} {...props} />
+}

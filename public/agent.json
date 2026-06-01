@@ -1,16 +1,21 @@
 {
-  "name": "Arcwise",
-  "description": "AI crypto copilot on Arc, Circle's stablecoin L1. Chat-driven swap, send, bridge, yield, and portfolio actions with USDC-native gas and ERC-8183 job escrow.",
-  "image": "/logo.png",
+  "name": "Numa",
+  "description": "AI stablecoin DeFi copilot on Arc — Circle's stablecoin Layer 1. Chat-driven swap, send, bridge (CCTP), portfolio, prices, yield, trending, and safety scans, with USDC-native gas and multichain routing via CCTP.",
+  "image": "/numa-logo.svg",
+  "url": "https://numa-arc.vercel.app",
   "endpoints": {
-    "chat": "https://arcwise.app/api/chat"
+    "chat": "https://numa-arc.vercel.app/api/chat"
   },
   "capabilities": [
     "swap",
     "send",
     "bridge",
+    "portfolio",
+    "prices",
     "yield",
-    "portfolio"
+    "trending",
+    "scan_token",
+    "scan_tx"
   ],
   "chainId": 5042002,
   "agentId": 0

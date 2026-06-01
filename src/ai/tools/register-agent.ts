@@ -11,7 +11,7 @@ import { registerAgent } from '@/lib/erc8004'
 export interface RegisterAgentToolInput {
   /**
    * URI of the Agent Registration File (HTTPS or IPFS) per ERC-8004 schema.
-   * Example: "https://arcwise.app/agent.json"
+   * Example: "https://numa-arc.vercel.app/agent.json"
    */
   agentURI: string
 }

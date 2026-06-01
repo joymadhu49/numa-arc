@@ -1,44 +1,42 @@
-'use client'
-
-import { forwardRef, type ButtonHTMLAttributes } from 'react'
+import { forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
-type Variant = 'default' | 'ghost' | 'outline' | 'destructive'
+type Variant = 'default' | 'outline' | 'ghost' | 'danger' | 'secondary'
 type Size = 'sm' | 'md' | 'lg' | 'icon'
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+const variants: Record<Variant, string> = {
+  // Primary: USDC brand blue with accessible (white) foreground.
+  default: 'bg-primary text-primary-fg hover:brightness-110 shadow-sm',
+  secondary: 'bg-muted-bg text-fg hover:bg-popover',
+  outline: 'border border-border-c text-fg hover:bg-muted-bg',
+  ghost: 'text-muted-fg hover:bg-muted-bg hover:text-fg',
+  danger: 'bg-danger text-danger-fg hover:brightness-110',
+}
+
+const sizes: Record<Size, string> = {
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-9 px-3.5 text-sm',
+  lg: 'h-11 px-5 text-base',
+  icon: 'h-9 w-9 p-0',
+}
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
   size?: Size
 }
 
-const variantStyles: Record<Variant, string> = {
-  default: 'bg-white text-neutral-900 hover:bg-neutral-200 active:bg-neutral-300',
-  ghost: 'bg-transparent text-neutral-100 hover:bg-neutral-800',
-  outline:
-    'border border-neutral-800 bg-transparent text-neutral-100 hover:bg-neutral-900',
-  destructive: 'bg-red-600 text-white hover:bg-red-500 active:bg-red-700',
-}
-
-const sizeStyles: Record<Size, string> = {
-  sm: 'h-8 px-3 text-xs',
-  md: 'h-9 px-4 text-sm',
-  lg: 'h-10 px-6 text-sm',
-  icon: 'h-9 w-9',
-}
-
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'md', type = 'button', ...rest }, ref) => {
+  ({ className, variant = 'default', size = 'md', ...props }, ref) => {
     return (
       <button
         ref={ref}
-        type={type}
         className={cn(
-          'inline-flex select-none items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 disabled:pointer-events-none disabled:opacity-50',
-          variantStyles[variant],
-          sizeStyles[size],
+          'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          variants[variant],
+          sizes[size],
           className,
         )}
-        {...rest}
+        {...props}
       />
     )
   },

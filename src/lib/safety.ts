@@ -12,10 +12,20 @@ import {
   type PublicClient,
 } from 'viem'
 import { arcTestnet } from '@/chains/arc'
+import { ACTIVE_CHAINS, getChain, toViemChain } from '@/chains/registry'
 
 // ---------- Types ----------
 
 export type RiskLevel = 'low' | 'med' | 'high'
+
+/** Risk level used by the shared ScanCardData contract. */
+export type ScanRisk = 'low' | 'medium' | 'high' | 'unknown'
+
+/** Structured flag for the shared ScanCardData contract. */
+export interface ScanFlag {
+  label: string
+  severity: 'info' | 'warn' | 'danger'
+}
 
 export interface SimulateTxParams {
   from: Address
@@ -38,6 +48,12 @@ export interface ScanTokenParams {
   chainId?: number
 }
 
+/**
+ * Token scan result. PRESERVES the legacy fields (`risk: RiskLevel`,
+ * `flags: string[]`, `metadata`) for existing consumers, and ADDS the richer
+ * fields the shared ScanCardData contract needs (cardRisk, structuredFlags,
+ * honeypot, taxes, holderCount, verified, source).
+ */
 export interface ScanTokenResult {
   risk: RiskLevel
   flags: string[]
@@ -51,6 +67,18 @@ export interface ScanTokenResult {
     verified?: boolean
     isContract?: boolean
   }
+  // ----- richer fields for ScanCardData -----
+  /** Risk in the shared contract's vocabulary. */
+  cardRisk: ScanRisk
+  /** Structured flags ({label, severity}) for the card. */
+  structuredFlags: ScanFlag[]
+  /** Where the data came from. */
+  source: 'goplus' | 'onchain' | 'mixed'
+  verified?: boolean
+  honeypot?: boolean
+  buyTaxPct?: number
+  sellTaxPct?: number
+  holderCount?: number
 }
 
 export interface ScanApprovalsParams {
@@ -104,23 +132,67 @@ const APPROVAL_EVENT = parseAbiItem(
   'event Approval(address indexed owner, address indexed spender, uint256 value)'
 )
 
-// ---------- Client factory ----------
+/**
+ * GoPlus token-security supported chains (numeric chainId). GoPlus uses the EVM
+ * chainId directly. Arc + Arc-testnet are NOT covered → on-chain fallback.
+ * Source: https://docs.gopluslabs.io (token_security supported chains).
+ */
+const GOPLUS_SUPPORTED_CHAIN_IDS = new Set<number>([
+  1, // Ethereum
+  10, // Optimism
+  56, // BSC
+  137, // Polygon
+  8453, // Base
+  42161, // Arbitrum
+  43114, // Avalanche
+  59144, // Linea
+  130, // Unichain
+  // (testnets are largely unsupported by GoPlus → on-chain fallback)
+])
 
+// ---------- Client factory (multichain) ----------
+
+const clientCache = new Map<number, PublicClient>()
+
+/**
+ * Build (and cache) a viem public client for ANY active chain, keyed by
+ * chainId, using the registry's PUBLIC rpc. Falls back to Arc testnet when the
+ * chainId is unknown. For Arc, an optional Alchemy key (if present in env) is
+ * prepended as a faster transport — but the public RPC is always available.
+ */
 function getClient(chainId?: number): PublicClient {
-  // For now, only Arc testnet is wired in. Cross-chain flows can extend this map.
-  if (chainId !== undefined && chainId !== arcTestnet.id) {
-    // Fall through with a generic public client using the same RPC for now.
-    // TODO: register other chain RPCs (Eth/Base/Arb/etc) for cross-chain scanning.
+  const id = chainId ?? arcTestnet.id
+  const cached = clientCache.get(id)
+  if (cached) return cached
+
+  // Arc testnet: preserve existing behaviour (optional Alchemy + public RPC).
+  if (id === arcTestnet.id) {
+    const alchemyKey = process.env.ALCHEMY_KEY ?? process.env.NEXT_PUBLIC_ALCHEMY_KEY
+    const transports = [http('https://rpc.testnet.arc.network')]
+    if (alchemyKey) {
+      transports.unshift(http(`https://arc-testnet.g.alchemy.com/v2/${alchemyKey}`))
+    }
+    const client = createPublicClient({
+      chain: arcTestnet,
+      transport: fallback(transports),
+    }) as PublicClient
+    clientCache.set(id, client)
+    return client
   }
-  const alchemyKey = process.env.ALCHEMY_KEY ?? process.env.NEXT_PUBLIC_ALCHEMY_KEY
-  const transports = [http('https://rpc.testnet.arc.network')]
-  if (alchemyKey) {
-    transports.unshift(http(`https://arc-testnet.g.alchemy.com/v2/${alchemyKey}`))
+
+  // Any other active/registry chain: build from the registry's public rpc.
+  const entry = getChain(id) ?? ACTIVE_CHAINS.find((c) => c.chainId === id)
+  if (entry) {
+    const client = createPublicClient({
+      chain: toViemChain(entry),
+      transport: http(entry.rpcUrl),
+    }) as PublicClient
+    clientCache.set(id, client)
+    return client
   }
-  return createPublicClient({
-    chain: arcTestnet,
-    transport: fallback(transports),
-  }) as PublicClient
+
+  // Unknown chain → Arc testnet default (preserves old fall-through behaviour).
+  return getClient(arcTestnet.id)
 }
 
 // ---------- Helpers ----------
@@ -210,81 +282,304 @@ export async function simulateTx(
   }
 }
 
+// ---------- GoPlus token security ----------
+
+/** Subset of the GoPlus token_security result we consume (all fields optional). */
+interface GoPlusTokenResult {
+  token_name?: string
+  token_symbol?: string
+  is_honeypot?: string
+  cannot_sell_all?: string
+  buy_tax?: string
+  sell_tax?: string
+  holder_count?: string
+  is_open_source?: string
+  is_mintable?: string
+  can_take_back_ownership?: string
+  owner_change_balance?: string
+  is_blacklisted?: string
+  hidden_owner?: string
+  is_proxy?: string
+  selfdestruct?: string
+  trading_cooldown?: string
+  is_anti_whale?: string
+  transfer_pausable?: string
+}
+
+interface GoPlusResponse {
+  code?: number
+  message?: string
+  result?: Record<string, GoPlusTokenResult>
+}
+
+function ynToBool(v: string | undefined): boolean | undefined {
+  if (v === undefined) return undefined
+  if (v === '1') return true
+  if (v === '0') return false
+  return undefined
+}
+
+function pctOrUndef(v: string | undefined): number | undefined {
+  if (v === undefined || v === '') return undefined
+  const n = Number(v)
+  if (!Number.isFinite(n)) return undefined
+  // GoPlus returns tax as a fraction (e.g. "0.1" = 10%).
+  return n <= 1 ? n * 100 : n
+}
+
+async function fetchGoPlus(
+  chainId: number,
+  address: Address,
+): Promise<GoPlusTokenResult | null> {
+  try {
+    const url = `https://api.gopluslabs.io/api/v1/token_security/${chainId}?contract_addresses=${address.toLowerCase()}`
+    const res = await fetch(url, {
+      next: { revalidate: 300 },
+      headers: { accept: 'application/json' },
+    })
+    if (!res.ok) return null
+    const json = (await res.json()) as GoPlusResponse
+    if (json.code !== 1 || !json.result) return null
+    // GoPlus keys the result map by lowercased address.
+    const entry =
+      json.result[address.toLowerCase()] ?? Object.values(json.result)[0]
+    return entry ?? null
+  } catch {
+    return null
+  }
+}
+
 // ---------- scanToken ----------
 
 export async function scanToken(
   params: ScanTokenParams
 ): Promise<ScanTokenResult> {
-  const { address, chainId } = params
+  const { address } = params
+  const chainId = params.chainId ?? arcTestnet.id
   const normalized = getAddress(address)
-  const client = getClient(chainId)
+
+  // Legacy outputs (preserved).
   const flags: string[] = []
   let risk: RiskLevel = 'low'
 
-  // Check it's actually a contract
-  let isContract = false
-  try {
-    const code = await client.getCode({ address: normalized })
-    isContract = !!code && code !== '0x'
-    if (!isContract) {
-      flags.push('Address is an EOA, not a token contract')
-      risk = 'high'
-    }
-  } catch {
-    flags.push('Unable to determine if address is a contract')
-    risk = 'med'
-  }
+  // Rich outputs (for ScanCardData).
+  const structuredFlags: ScanFlag[] = []
+  let cardRisk: ScanRisk = 'unknown'
+  let source: 'goplus' | 'onchain' | 'mixed' = 'onchain'
 
-  // Try ERC-20 metadata
   let name: string | undefined
   let symbol: string | undefined
   let decimals: number | undefined
   let totalSupply: string | undefined
+  let verified: boolean | undefined
+  let honeypot: boolean | undefined
+  let buyTaxPct: number | undefined
+  let sellTaxPct: number | undefined
+  let holderCount: number | undefined
 
-  if (isContract) {
-    const reads = await Promise.allSettled([
-      client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'name' }),
-      client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'symbol' }),
-      client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'decimals' }),
-      client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'totalSupply' }),
-    ])
+  // ----- 1) GoPlus (when chain is supported) -----
+  let goplusOk = false
+  if (GOPLUS_SUPPORTED_CHAIN_IDS.has(chainId)) {
+    const gp = await fetchGoPlus(chainId, normalized)
+    if (gp) {
+      goplusOk = true
+      source = 'goplus'
 
-    if (reads[0].status === 'fulfilled') name = reads[0].value as string
-    if (reads[1].status === 'fulfilled') symbol = reads[1].value as string
-    if (reads[2].status === 'fulfilled') decimals = Number(reads[2].value as number)
-    if (reads[3].status === 'fulfilled') totalSupply = (reads[3].value as bigint).toString()
+      name = gp.token_name || name
+      symbol = gp.token_symbol || symbol
+      honeypot = ynToBool(gp.is_honeypot)
+      const cannotSell = ynToBool(gp.cannot_sell_all)
+      buyTaxPct = pctOrUndef(gp.buy_tax)
+      sellTaxPct = pctOrUndef(gp.sell_tax)
+      verified = ynToBool(gp.is_open_source)
+      const holders = gp.holder_count ? Number(gp.holder_count) : undefined
+      holderCount = Number.isFinite(holders) ? holders : undefined
 
-    if (!name && !symbol) {
-      flags.push('Contract does not expose ERC-20 metadata (name/symbol)')
-      risk = risk === 'low' ? 'med' : risk
-    }
-    if (decimals === undefined) {
-      flags.push('Contract missing decimals() — not standards-compliant ERC-20')
-      risk = risk === 'low' ? 'med' : risk
+      const mintable = ynToBool(gp.is_mintable)
+      const blacklist = ynToBool(gp.is_blacklisted)
+      const hiddenOwner = ynToBool(gp.hidden_owner)
+      const ownerChangeBal = ynToBool(gp.owner_change_balance)
+      const takeBackOwnership = ynToBool(gp.can_take_back_ownership)
+      const selfdestruct = ynToBool(gp.selfdestruct)
+      const pausable = ynToBool(gp.transfer_pausable)
+      const cooldown = ynToBool(gp.trading_cooldown)
+
+      // Build flags.
+      if (honeypot) {
+        structuredFlags.push({ label: 'Honeypot detected', severity: 'danger' })
+        flags.push('Honeypot detected (GoPlus)')
+      }
+      if (cannotSell) {
+        structuredFlags.push({ label: 'Cannot sell all tokens', severity: 'danger' })
+        flags.push('Cannot sell all (GoPlus)')
+      }
+      if (typeof sellTaxPct === 'number' && sellTaxPct > 10) {
+        structuredFlags.push({
+          label: `High sell tax (${sellTaxPct.toFixed(1)}%)`,
+          severity: 'danger',
+        })
+        flags.push(`Sell tax ${sellTaxPct.toFixed(1)}%`)
+      } else if (typeof sellTaxPct === 'number' && sellTaxPct > 0) {
+        structuredFlags.push({
+          label: `Sell tax ${sellTaxPct.toFixed(1)}%`,
+          severity: 'warn',
+        })
+      }
+      if (typeof buyTaxPct === 'number' && buyTaxPct > 0) {
+        structuredFlags.push({
+          label: `Buy tax ${buyTaxPct.toFixed(1)}%`,
+          severity: buyTaxPct > 10 ? 'danger' : 'warn',
+        })
+      }
+      if (mintable) {
+        structuredFlags.push({ label: 'Owner can mint new tokens', severity: 'warn' })
+        flags.push('Mintable by owner')
+      }
+      if (blacklist) {
+        structuredFlags.push({ label: 'Owner can blacklist addresses', severity: 'warn' })
+        flags.push('Blacklist function present')
+      }
+      if (hiddenOwner) {
+        structuredFlags.push({ label: 'Hidden owner', severity: 'warn' })
+        flags.push('Hidden owner')
+      }
+      if (ownerChangeBal) {
+        structuredFlags.push({ label: 'Owner can change balances', severity: 'danger' })
+        flags.push('Owner can change balances')
+      }
+      if (takeBackOwnership) {
+        structuredFlags.push({ label: 'Ownership can be reclaimed', severity: 'warn' })
+      }
+      if (selfdestruct) {
+        structuredFlags.push({ label: 'Self-destruct present', severity: 'danger' })
+      }
+      if (pausable) {
+        structuredFlags.push({ label: 'Transfers can be paused', severity: 'warn' })
+      }
+      if (cooldown) {
+        structuredFlags.push({ label: 'Trading cooldown', severity: 'info' })
+      }
+      if (verified === true) {
+        structuredFlags.push({ label: 'Source code verified', severity: 'info' })
+      } else if (verified === false) {
+        structuredFlags.push({ label: 'Source code NOT verified', severity: 'warn' })
+        flags.push('Unverified source')
+      }
+
+      // ----- risk decision -----
+      const sellTaxHigh = typeof sellTaxPct === 'number' && sellTaxPct > 10
+      if (honeypot === true || cannotSell === true || sellTaxHigh) {
+        cardRisk = 'high'
+        risk = 'high'
+      } else if (
+        mintable === true ||
+        blacklist === true ||
+        ownerChangeBal === true ||
+        hiddenOwner === true ||
+        verified === false
+      ) {
+        cardRisk = 'medium'
+        risk = 'med'
+      } else {
+        cardRisk = 'low'
+        risk = 'low'
+      }
     }
   }
 
-  // TODO: Explorer verification check — call Arcscan API once a public endpoint exists.
-  // For now, mark verified as undefined and emit a flag.
-  const verified: boolean | undefined = undefined
+  // ----- 2) On-chain checks (always run; primary when GoPlus unavailable) -----
+  // These also fill in metadata that GoPlus may not provide (decimals, supply).
+  let isContract = false
+  try {
+    const client = getClient(chainId)
+    const code = await client.getCode({ address: normalized })
+    isContract = !!code && code !== '0x'
+
+    if (!isContract) {
+      structuredFlags.push({
+        label:
+          'No token contract found at this address on this chain (it may be an EOA, or the token isn’t deployed here).',
+        severity: 'info',
+      })
+      flags.push('No token contract found at this address on this chain')
+      if (!goplusOk) {
+        risk = 'med'
+        cardRisk = 'unknown'
+      }
+    } else {
+      const reads = await Promise.allSettled([
+        client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'name' }),
+        client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'symbol' }),
+        client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'decimals' }),
+        client.readContract({ address: normalized, abi: ERC20_ABI, functionName: 'totalSupply' }),
+      ])
+      if (reads[0].status === 'fulfilled') name = name ?? (reads[0].value as string)
+      if (reads[1].status === 'fulfilled') symbol = symbol ?? (reads[1].value as string)
+      if (reads[2].status === 'fulfilled') decimals = Number(reads[2].value as number)
+      if (reads[3].status === 'fulfilled') totalSupply = (reads[3].value as bigint).toString()
+
+      if (!goplusOk) {
+        if (!name && !symbol) {
+          structuredFlags.push({
+            label: 'No ERC-20 metadata (name/symbol)',
+            severity: 'warn',
+          })
+          flags.push('Contract does not expose ERC-20 metadata (name/symbol)')
+          if (risk === 'low') risk = 'med'
+        }
+        if (decimals === undefined) {
+          structuredFlags.push({
+            label: 'Missing decimals() — non-standard ERC-20',
+            severity: 'warn',
+          })
+          flags.push('Contract missing decimals() — not standards-compliant ERC-20')
+          if (risk === 'low') risk = 'med'
+        }
+      }
+    }
+  } catch {
+    structuredFlags.push({ label: 'Unable to read contract bytecode', severity: 'warn' })
+    flags.push('Unable to determine if address is a contract')
+    if (!goplusOk && risk === 'low') risk = 'med'
+  }
+
+  // If GoPlus also ran and on-chain added metadata, mark mixed.
+  if (goplusOk && isContract) source = 'mixed'
+
+  // ----- 3) Finalize cardRisk when GoPlus did not run -----
+  if (!goplusOk) {
+    if (!isContract) {
+      // A missing contract is NEUTRAL, not scary: there is simply nothing to
+      // assess here (no bytecode to scan). Keep cardRisk 'unknown'.
+      cardRisk = 'unknown'
+      structuredFlags.push({
+        label: 'Token-security API unavailable on this chain (on-chain checks only)',
+        severity: 'info',
+      })
+    } else {
+      // Map legacy RiskLevel → ScanRisk. Without GoPlus we only have weak
+      // signals; treat a clean-but-unverifiable ERC-20 as 'unknown'.
+      if (risk === 'high') cardRisk = 'high'
+      else if (risk === 'med') cardRisk = 'medium'
+      else cardRisk = 'unknown'
+      structuredFlags.push({
+        label: 'Honeypot/tax data unavailable on this chain (on-chain checks only)',
+        severity: 'info',
+      })
+      flags.push('GoPlus token-security unavailable on this chain; on-chain checks only')
+    }
+  }
+
   if (verified === undefined) {
-    flags.push('Source verification status unknown (explorer API not yet integrated)')
+    flags.push('Source verification status unknown')
   }
-
-  // TODO: GoPlus Security API integration (token security: honeypot, sell tax,
-  // hidden owner, mintable). When available, surface sell tax > 10% as 'high'.
-  // Placeholder heuristic only.
-  flags.push('Honeypot/tax heuristics not yet wired (GoPlus integration pending)')
-
-  // TODO: Holder concentration via explorer or Codex/Birdeye API.
-  flags.push('Holder concentration check pending (top-holder API not integrated)')
 
   return {
     risk,
     flags,
     metadata: {
       address: normalized,
-      chainId: chainId ?? arcTestnet.id,
+      chainId,
       name,
       symbol,
       decimals,
@@ -292,6 +587,14 @@ export async function scanToken(
       verified,
       isContract,
     },
+    cardRisk,
+    structuredFlags,
+    source,
+    verified,
+    honeypot,
+    buyTaxPct,
+    sellTaxPct,
+    holderCount,
   }
 }
 

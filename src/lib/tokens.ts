@@ -1,14 +1,21 @@
 /**
  * Token registry for Arc Testnet and common chains.
  *
- * TODO(downstream): Replace placeholder addresses below with verified deployments.
- * - USDC on Arc Testnet is the native gas token; bridged ERC-20 representations
- *   on other chains use canonical Circle deployments where known.
- * - Confirm USDC ERC-20 wrapper address on Arc (if any) once Circle publishes it
- *   on https://developers.circle.com/stablecoins/usdc-on-test-networks.
+ * Per-chain USDC/EURC entries are now DERIVED from the single network registry
+ * (see '@/chains/registry') so that tokens for every active chain exist and stay
+ * in sync with chain config. The Arc Testnet USDC/EURC entries are kept as
+ * native-gas style entries (address driven by env, may be null) because USDC is
+ * Arc's native gas token and balance is read via `getBalance`, not ERC-20
+ * `balanceOf`. A few extra Ethereum-mainnet tokens (USDT/DAI/WETH/ETH) are kept
+ * for portfolio display.
+ *
+ * NOTE: all existing exports/signatures are preserved exactly — TOKENS,
+ * TokenInfo, TokenSymbol, getToken, getTokensForChain, ARC_TESTNET_CHAIN_ID,
+ * ERC20_ABI, PLACEHOLDER_ADDRESS.
  */
 
 import type { Address } from 'viem'
+import { ACTIVE_CHAINS, getChain } from '@/chains/registry'
 
 export const ARC_TESTNET_CHAIN_ID = 5042002 as const
 
@@ -35,19 +42,16 @@ export interface TokenInfo {
  */
 export const PLACEHOLDER_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
-/**
- * Token registry. Keyed implicitly by (chainId, symbol).
- *
- * NOTE: USDC on Arc Testnet is the native gas token (decimals 6). It has no
- * canonical ERC-20 representation in the standard sense — balance is read via
- * `getBalance` rather than ERC-20 `balanceOf`. For interop with the rest of
- * the codebase we keep it in the registry with `address: null`.
- */
-export const TOKENS: readonly TokenInfo[] = [
-  // Arc Testnet ---------------------------------------------------------------
-  // Native USDC gas uses 18-decimal wei via eth_getBalance, but the ERC-20
-  // interface at 0x3600... exposes the canonical 6-decimal balance. Use ERC-20
-  // path for clean display.
+// ---------------------------------------------------------------------------
+// Arc Testnet entries (native-gas style; address may be null / env-driven).
+//
+// USDC on Arc Testnet is the native gas token (decimals 6). It has no canonical
+// ERC-20 representation in the standard sense — balance is read via `getBalance`
+// rather than ERC-20 `balanceOf`. For interop with the rest of the codebase we
+// keep it in the registry with `address: null` unless an env override is set.
+// ---------------------------------------------------------------------------
+
+const ARC_TOKENS: readonly TokenInfo[] = [
   {
     symbol: 'USDC',
     name: 'USD Coin',
@@ -64,12 +68,53 @@ export const TOKENS: readonly TokenInfo[] = [
     chainId: ARC_TESTNET_CHAIN_ID,
     coingeckoId: 'euro-coin',
   },
-  // Ethereum mainnet (chainId 1) ---------------------------------------------
+]
+
+// ---------------------------------------------------------------------------
+// Registry-derived ERC-20 stablecoin entries for the OTHER active chains.
+// USDC/EURC addresses come from the network registry (source of truth).
+// ---------------------------------------------------------------------------
+
+const REGISTRY_TOKENS: readonly TokenInfo[] = ACTIVE_CHAINS.filter((c) => !c.isArc).flatMap(
+  (c): TokenInfo[] => {
+    const entries: TokenInfo[] = [
+      {
+        symbol: 'USDC',
+        name: 'USD Coin',
+        decimals: 6,
+        address: c.usdc,
+        chainId: c.chainId,
+        coingeckoId: 'usd-coin',
+      },
+    ]
+    if (c.eurc) {
+      entries.push({
+        symbol: 'EURC',
+        name: 'Euro Coin',
+        decimals: 6,
+        address: c.eurc,
+        chainId: c.chainId,
+        coingeckoId: 'euro-coin',
+      })
+    }
+    return entries
+  },
+)
+
+// ---------------------------------------------------------------------------
+// Ethereum-mainnet extras kept for portfolio display (USDC retained via the
+// mainnet registry row for consistency; USDT/DAI/WETH/ETH are app-specific).
+// ---------------------------------------------------------------------------
+
+const ETHEREUM_USDC = getChain('ethereum')?.usdc ?? '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const BASE_USDC = getChain('base')?.usdc ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+
+const EXTRA_TOKENS: readonly TokenInfo[] = [
   {
     symbol: 'USDC',
     name: 'USD Coin',
     decimals: 6,
-    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    address: ETHEREUM_USDC,
     chainId: 1,
     coingeckoId: 'usd-coin',
   },
@@ -105,16 +150,26 @@ export const TOKENS: readonly TokenInfo[] = [
     chainId: 1,
     coingeckoId: 'ethereum',
   },
-  // Base (chainId 8453) -------------------------------------------------------
   {
     symbol: 'USDC',
     name: 'USD Coin',
     decimals: 6,
-    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    address: BASE_USDC,
     chainId: 8453,
     coingeckoId: 'usd-coin',
   },
-] as const
+]
+
+/**
+ * Token registry. Keyed implicitly by (chainId, symbol).
+ * Arc native entries first (default chain), then registry-derived ERC-20
+ * stablecoins for other active chains, then mainnet display extras.
+ */
+export const TOKENS: readonly TokenInfo[] = [
+  ...ARC_TOKENS,
+  ...REGISTRY_TOKENS,
+  ...EXTRA_TOKENS,
+]
 
 /** Lookup a token by chain + symbol. */
 export function getToken(chainId: number, symbol: TokenSymbol): TokenInfo | undefined {

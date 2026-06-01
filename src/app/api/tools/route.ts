@@ -81,7 +81,31 @@ export async function POST(req: Request): Promise<NextResponse> {
         const args = body.args as unknown as PortfolioArgs
         const address = (args.address ?? body.address) as Address | undefined
         if (!address) return badRequest('address is required for portfolio')
-        return NextResponse.json(await getPortfolio({ address, chainId: args.chainId }))
+        const portfolio = await getPortfolio({ address, chainId: args.chainId })
+        // Opt-in: return the GROUPED multichain PortfolioCardData directly
+        // (used by the /portfolio page, which renders the chain-grouped card).
+        if (body.args.grouped === true) {
+          return NextResponse.json(portfolio)
+        }
+        if (!portfolio.ok) return NextResponse.json(portfolio)
+        // Back-compat shape for any legacy caller (which expects
+        // { ok, data: { balances, totalUsd } }). Flatten the multichain
+        // PortfolioCardData into the legacy balances[] list.
+        const balances = portfolio.chains.flatMap((c) =>
+          c.tokens.map((t) => ({
+            symbol: t.symbol,
+            name: t.name,
+            decimals: 6,
+            amount: t.balance,
+            usdValue: t.usd ?? undefined,
+            address: null,
+            chainId: 0,
+          })),
+        )
+        return NextResponse.json({
+          ok: true as const,
+          data: { balances, totalUsd: portfolio.totalUsd },
+        })
       }
       case 'add_liquidity': {
         const args = body.args as unknown as AddLiquidityArgs
