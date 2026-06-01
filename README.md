@@ -17,7 +17,7 @@ Numa turns DeFi into a conversation. Ask in plain English: swap, send, bridge ac
 ## Features
 
 - **Chat-driven DeFi** — swap, send, bridge via CCTP, deposit, withdraw, add/remove liquidity, all triggered by natural language.
-- **Multi-chain bridging** — CCTP routes from Ethereum Sepolia and Base Sepolia into Arc Testnet, plus reverse paths.
+- **Multi-chain bridging** — CCTP routes between Arc Testnet (the hub) and its testnet siblings: Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, OP Sepolia, Polygon Amoy, Avalanche Fuji, Unichain Sepolia, and Linea Sepolia, in both directions. Mainnet routes (Arc, Ethereum, Base) are wired but gated behind `NEXT_PUBLIC_ENABLE_MAINNET`.
 - **Portfolio + yield discovery** — Arc-only USDC + EURC balances via ERC-20 precompile, live token prices via CoinGecko, yield opportunities via DefiLlama.
 - **Safety scans** — pre-flight token + transaction scans through `scan_token` and `scan_tx` tools.
 - **Soulbound agent NFT** — mint a unique character (DiceBear-generated) as an ERC-721 soulbound token on Arc. Fully on-chain metadata, no IPFS, unlimited supply, gas-only mint.
@@ -41,7 +41,7 @@ Source: [`contracts/NumaAgent.sol`](contracts/NumaAgent.sol). ABI + deploy metad
 - **Framework:** Next.js 15 (App Router) + React 19 + TypeScript strict
 - **Wallet / chain:** viem 2, wagmi 2, WalletConnect, MetaMask
 - **Stablecoin rails:** `@circle-fin/app-kit`, `@circle-fin/adapter-viem-v2` (swap, bridge via CCTP, send)
-- **AI:** OpenRouter (`openai/gpt-4o`) via OpenAI-compatible streaming
+- **AI:** Vercel AI SDK v6 streaming over OpenRouter; default model `anthropic/claude-sonnet-4.6` (overridable via `OPENROUTER_MODEL`)
 - **Smart contracts:** Solidity 0.8.24 with `viaIR` + optimizer
 - **UI:** Tailwind CSS, lucide-react icons, zustand
 
@@ -157,7 +157,7 @@ A `vercel.json` in the repo already sets the install command, build command, and
 
 ## Architecture notes
 
-- **AI tool flow:** `system-prompt.ts` instructs the model to call tools eagerly. The OpenRouter stream is parsed in `/api/chat`, tool calls are dispatched client-side via `src/lib/exec-tools.ts`. Read-only tools hit `/api/tools`. Signing tools return `awaiting_wallet_signature` and the user confirms via wallet.
+- **AI tool flow:** `/api/chat` runs the Vercel AI SDK `streamText` loop over OpenRouter with the tools defined in `src/ai/tools.ts`. Read tools (`get_prices`, `get_yield`, `get_trending`, `get_portfolio`, `get_lp_positions`, `scan_token`, `scan_tx`, `estimate_route`, `get_bridge_status`) execute server-side. Write/signing tools (`swap`, `send`, `bridge`, `deposit`, `withdraw`, `add_liquidity`, `remove_liquidity`, plus the agent flows) have no server `execute`; they surface as tool calls the client intercepts, previews, and runs through the wallet via `src/lib/tx-executor.ts`. A structural safety gate (`prepareStep`) keeps the fund-moving write tools locked until the turn contains a successful scan/simulation result.
 - **Bridge:** `useTxExecutor` resolves source/destination chains, switches the wallet via raw EIP-1193 (bypassing wagmi's strict chain check), then calls `appkit.bridge()`. CCTP burn step is the canonical tx hash returned to the UI.
 - **NumaAgent mint:** `mint-agent-card.tsx` builds the calldata with `encodeFunctionData(NUMA_AGENT_ABI, 'mint', [...])`, sends it to the contract, waits for the receipt, and parses the `Mint` event for the tokenId.
 - **New chat reset:** clicking the sidebar Home or the Numa logo pushes `/?new=<timestamp>`; `Chat` watches the `new` search param and clears all message state when it changes.

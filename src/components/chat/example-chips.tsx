@@ -1,8 +1,16 @@
 'use client'
 
+import { Sparkles } from 'lucide-react'
+
 interface ExampleChipsProps {
   onPick: (prompt: string) => void
   disabled?: boolean
+  /** Override the default starter prompts (used for follow-up suggestions). */
+  prompts?: readonly string[]
+  /** Section label. */
+  label?: string
+  /** Compact pill layout (for follow-ups) vs. bulleted list (for welcome). */
+  variant?: 'list' | 'pills'
 }
 
 const EXAMPLES: readonly string[] = [
@@ -18,21 +26,45 @@ const EXAMPLES: readonly string[] = [
   'Mint your agent ID',
 ]
 
-export function ExampleChips({ onPick, disabled = false }: ExampleChipsProps) {
-  return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 px-3 py-3 sm:px-5 sm:py-4">
-      <p className="mb-2 text-xs text-neutral-300 sm:mb-3 sm:text-sm">Try an example:</p>
-      <ul className="space-y-1.5 sm:space-y-2">
-        {EXAMPLES.map((ex) => (
-          <li
+export function ExampleChips({
+  onPick,
+  disabled = false,
+  prompts,
+  label = 'Try an example:',
+  variant = 'list',
+}: ExampleChipsProps) {
+  const items = prompts ?? EXAMPLES
+
+  if (variant === 'pills') {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {items.map((ex) => (
+          <button
             key={ex}
-            className="list-disc list-inside marker:text-neutral-600"
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(ex)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border-c bg-card px-2.5 py-1 text-xs text-fg transition hover:bg-muted-bg disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <Sparkles className="h-3 w-3 text-primary" />
+            {ex}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full rounded-2xl border border-border-c bg-card px-3 py-2.5 sm:px-4 sm:py-3">
+      <p className="mb-1.5 text-xs font-medium text-muted-fg sm:mb-2 sm:text-sm">{label}</p>
+      <ul className="space-y-1 sm:space-y-1.5">
+        {items.map((ex) => (
+          <li key={ex} className="list-inside list-disc marker:text-border-c">
             <button
               type="button"
               disabled={disabled}
               onClick={() => onPick(ex)}
-              className="break-words text-left text-xs text-neutral-200 underline decoration-neutral-600 decoration-1 underline-offset-4 transition hover:text-white hover:decoration-neutral-300 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+              className="break-words text-left text-xs text-fg underline decoration-border-c decoration-1 underline-offset-4 transition hover:text-primary hover:decoration-primary disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
             >
               {ex}
             </button>

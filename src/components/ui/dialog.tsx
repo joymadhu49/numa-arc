@@ -1,82 +1,50 @@
-'use client'
-
-import { useEffect, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+import type { HTMLAttributes, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { useEffect } from 'react'
 
 interface DialogProps {
   open: boolean
-  onOpenChange: (open: boolean) => void
+  onClose: () => void
   children: ReactNode
 }
 
-export function Dialog({ open, onOpenChange, children }: DialogProps) {
-  const [mounted, setMounted] = useState(false)
-
+export function Dialog({ open, onClose, children }: DialogProps) {
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false)
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [open, onOpenChange])
+    if (open) document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
 
-  if (!mounted || !open) return null
+  if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={() => onOpenChange(false)}
-        aria-hidden
-      />
-      <div className="relative z-10 w-full max-w-md">{children}</div>
+        className={cn(
+          'relative z-10 w-full max-w-md rounded-2xl border border-border-c bg-popover shadow-2xl',
+        )}
+        role="dialog"
+        aria-modal="true"
+      >
+        {children}
+      </div>
     </div>,
     document.body,
   )
 }
 
-interface DialogContentProps {
-  className?: string
-  children: ReactNode
+export function DialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('border-b border-border-c px-5 py-4', className)} {...props} />
 }
 
-export function DialogContent({ className, children }: DialogContentProps) {
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className={cn(
-        'mx-4 rounded-lg border border-neutral-800 bg-neutral-950 p-6 text-neutral-100 shadow-xl',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
+export function DialogTitle({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <h2 className={cn('text-base font-semibold text-fg', className)} {...props} />
 }
 
-export function DialogHeader({ className, children }: DialogContentProps) {
-  return <div className={cn('mb-4 flex flex-col gap-1', className)}>{children}</div>
-}
-
-export function DialogTitle({ className, children }: DialogContentProps) {
-  return (
-    <h2 className={cn('text-base font-semibold tracking-tight', className)}>{children}</h2>
-  )
-}
-
-export function DialogDescription({ className, children }: DialogContentProps) {
-  return <p className={cn('text-xs text-neutral-400', className)}>{children}</p>
-}
-
-export function DialogFooter({ className, children }: DialogContentProps) {
-  return (
-    <div className={cn('mt-6 flex items-center justify-end gap-2', className)}>{children}</div>
-  )
+export function DialogBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('px-5 py-4', className)} {...props} />
 }

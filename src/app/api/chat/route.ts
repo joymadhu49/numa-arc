@@ -1,222 +1,153 @@
+import {
+  convertToModelMessages,
+  stepCountIs,
+  streamText,
+  type UIMessage,
+} from 'ai'
+import { cookies } from 'next/headers'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { SYSTEM_PROMPT } from '@/ai/system-prompt'
-import { TOOLS } from '@/ai/tools'
+import { buildNumaTools } from '@/ai/tools'
+import { verifySessionToken, SESSION_COOKIE } from '@/lib/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type ChatRole = 'user' | 'assistant' | 'system' | 'tool'
+/** Strong 2026 tool-use fallback (overridable via OPENROUTER_MODEL env). */
+const FALLBACK_MODEL = 'anthropic/claude-sonnet-4.6'
 
-interface ToolCallSpec {
-  id: string
-  type: 'function'
-  function: { name: string; arguments: string }
+/** Max number of agentic steps (tool round-trips) per request. */
+const MAX_STEPS = 6
+
+// ---------------------------------------------------------------------------
+// NO FORCED SCAN-BEFORE-WRITE GATE.
+//
+// A previous `prepareStep` gate withheld every fund-moving write tool
+// (swap/send/bridge/…) until the model first produced a scan_token/scan_tx
+// result. It backfired badly: a plain "swap 1 USDC for EURC" between two KNOWN
+// stablecoins has no contract address for the model to scan, so to satisfy the
+// gate the model INVENTED token addresses and ran scan_token on them — which on
+// Arc (no GoPlus, USDC is a precompile) reported "EOA, not a token / High risk",
+// producing scary false-positive cards and never running the swap.
+//
+// The real, non-theater safety layer is intact and does NOT depend on the gate:
+//   1. simulate → review → confirm modal (TxPreview) — the user approves every tx,
+//   2. in-code guards in tx-executor (checksum, slippage cap, spend caps),
+//   3. scan_token remains available for GENUINELY unknown / user-pasted token
+//      addresses (model discretion, per the system prompt) — just not forced.
+// ---------------------------------------------------------------------------
+// Abuse protection (P0). In-memory per-IP sliding window + body size cap.
+//
+// TODO(security): replace with server-side SIWE/session gate + a distributed
+// rate limiter (e.g. Upstash Redis) for production. The in-memory limiter below
+// is per-instance only — it does NOT survive serverless cold starts and does
+// NOT coordinate across multiple instances, so it is best-effort defense in
+// depth, not a real auth boundary. SIWE is currently verified client-side only
+// (see src/lib/use-auth.ts); a real deployment must verify the signed session
+// on the server before allowing model calls.
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 20
+/** Reject obviously oversized payloads (~256 KB of JSON). */
+const MAX_BODY_BYTES = 256 * 1024
+
+const hits = new Map<string, number[]>()
+
+function clientIp(req: Request): string {
+  const fwd = req.headers.get('x-forwarded-for')
+  if (fwd) return fwd.split(',')[0]!.trim()
+  return req.headers.get('x-real-ip') ?? 'unknown'
 }
 
-interface ChatMessage {
-  role: ChatRole
-  content: string
-  tool_call_id?: string
-  name?: string
-  tool_calls?: ToolCallSpec[]
+function rateLimited(ip: string): boolean {
+  const now = Date.now()
+  const cutoff = now - RATE_LIMIT_WINDOW_MS
+  const recent = (hits.get(ip) ?? []).filter((t) => t > cutoff)
+  recent.push(now)
+  hits.set(ip, recent)
+  // Opportunistic cleanup so the map does not grow unbounded.
+  if (hits.size > 5000) {
+    for (const [key, times] of hits) {
+      if (times.every((t) => t <= cutoff)) hits.delete(key)
+    }
+  }
+  return recent.length > RATE_LIMIT_MAX
+}
+
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 interface ChatRequestBody {
-  messages: ChatMessage[]
-}
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const MODEL = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o'
-
-function encodeSse(event: string, data: unknown): Uint8Array {
-  const payload = typeof data === 'string' ? data : JSON.stringify(data)
-  return new TextEncoder().encode(`event: ${event}\ndata: ${payload}\n\n`)
-}
-
-interface OpenRouterDelta {
-  content?: string | null
-  tool_calls?: Array<{
-    index: number
-    id?: string
-    type?: 'function'
-    function?: { name?: string; arguments?: string }
-  }>
-}
-
-interface OpenRouterChunk {
-  id?: string
-  choices?: Array<{
-    index: number
-    delta?: OpenRouterDelta
-    finish_reason?: string | null
-  }>
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
-}
-
-interface AccumulatedToolCall {
-  id: string
-  name: string
-  argumentsBuf: string
+  messages: UIMessage[]
+  /** Optional connected wallet address, used as tool execution context. */
+  address?: string
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // AUTH GATE (the real one): require a valid server-verified wallet session.
+  // This is what actually prevents un-authenticated callers from spending LLM
+  // credits — the client-side gate is UX only. No cookie → 401, no model call.
+  const jar = await cookies()
+  const session = verifySessionToken(jar.get(SESSION_COOKIE)?.value)
+  if (!session) {
+    return jsonError('unauthorized', 401)
+  }
+
+  const ip = clientIp(req)
+  if (rateLimited(ip)) {
+    return jsonError('rate_limited', 429)
+  }
+
+  // Body size cap (defense against absurdly large message arrays).
+  const contentLength = Number(req.headers.get('content-length') ?? '0')
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+    return jsonError('payload_too_large', 413)
+  }
+
+  const raw = await req.text()
+  if (raw.length > MAX_BODY_BYTES) {
+    return jsonError('payload_too_large', 413)
+  }
+
   let body: ChatRequestBody
   try {
-    body = (await req.json()) as ChatRequestBody
+    body = JSON.parse(raw) as ChatRequestBody
   } catch {
-    return new Response(JSON.stringify({ error: 'invalid_json' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    })
+    return jsonError('invalid_json', 400)
   }
 
   if (!body?.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
-    return new Response(JSON.stringify({ error: 'messages_required' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    })
+    return jsonError('messages_required', 400)
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'missing_openrouter_api_key' }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    })
+    return jsonError('missing_openrouter_api_key', 500)
   }
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...body.messages.map((m): ChatMessage => {
-      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
-        return {
-          role: 'assistant',
-          content: m.content ?? '',
-          tool_calls: m.tool_calls,
-        }
-      }
-      if (m.role === 'tool') {
-        return {
-          role: 'tool',
-          content: m.content,
-          tool_call_id: m.tool_call_id ?? '',
-          ...(m.name ? { name: m.name } : {}),
-        }
-      }
-      return { role: m.role, content: m.content }
-    }),
-  ]
+  // OpenRouter app-attribution headers (shows up in the OpenRouter dashboard /
+  // app rankings). HTTP-Referer uses NEXT_PUBLIC_APP_URL when set, else the prod
+  // URL; X-Title labels the app as Numa.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://numa-arc.vercel.app'
+  const openrouter = createOpenRouter({
+    apiKey,
+    headers: { 'HTTP-Referer': appUrl, 'X-Title': 'Numa' },
+  })
+  const modelId = process.env.OPENROUTER_MODEL ?? FALLBACK_MODEL
 
-  const orResponse = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      'http-referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://arcwise.app',
-      'x-title': 'Arcwise',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      tools: TOOLS,
-      stream: true,
-      max_tokens: 4096,
-    }),
+  const result = streamText({
+    model: openrouter(modelId),
+    system: SYSTEM_PROMPT,
+    messages: await convertToModelMessages(body.messages),
+    // Read-tool execute() functions close over the connected wallet address.
+    tools: buildNumaTools({ address: body.address }),
+    stopWhen: stepCountIs(MAX_STEPS),
   })
 
-  if (!orResponse.ok || !orResponse.body) {
-    const text = await orResponse.text().catch(() => '')
-    return new Response(
-      JSON.stringify({ error: 'openrouter_failed', status: orResponse.status, detail: text }),
-      { status: 502, headers: { 'content-type': 'application/json' } },
-    )
-  }
-
-  const upstream = orResponse.body
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (event: string, data: unknown): void => {
-        controller.enqueue(encodeSse(event, data))
-      }
-
-      const reader = upstream.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      const toolCalls = new Map<number, AccumulatedToolCall>()
-      let flushed = false
-
-      try {
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim()
-            if (!line || !line.startsWith('data:')) continue
-            const payload = line.slice(5).trim()
-            if (payload === '[DONE]') continue
-
-            let chunk: OpenRouterChunk
-            try {
-              chunk = JSON.parse(payload) as OpenRouterChunk
-            } catch {
-              continue
-            }
-
-            const choice = chunk.choices?.[0]
-            const delta = choice?.delta
-            if (!delta) continue
-
-            if (typeof delta.content === 'string' && delta.content.length > 0) {
-              send('text', { delta: delta.content })
-            }
-
-            if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                const existing = toolCalls.get(tc.index) ?? {
-                  id: '',
-                  name: '',
-                  argumentsBuf: '',
-                }
-                if (tc.id) existing.id = tc.id
-                if (tc.function?.name) existing.name = tc.function.name
-                if (tc.function?.arguments) existing.argumentsBuf += tc.function.arguments
-                toolCalls.set(tc.index, existing)
-              }
-            }
-
-            if (choice?.finish_reason && !flushed) {
-              flushed = true
-              for (const call of toolCalls.values()) {
-                let input: unknown = {}
-                try {
-                  input = call.argumentsBuf ? JSON.parse(call.argumentsBuf) : {}
-                } catch {
-                  input = { _raw: call.argumentsBuf }
-                }
-                send('tool_use', { id: call.id, name: call.name, input })
-              }
-              send('done', { stopReason: choice.finish_reason, usage: chunk.usage ?? null })
-            }
-          }
-        }
-        controller.close()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown_error'
-        send('error', { message })
-        controller.close()
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
-    },
-  })
+  return result.toUIMessageStreamResponse()
 }

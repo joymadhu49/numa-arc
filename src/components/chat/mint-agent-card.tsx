@@ -159,7 +159,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
   }, [agent, address, config, minting, onMinted])
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60">
+    <div className="numa-card-in overflow-hidden rounded-2xl border border-border-c bg-card">
       <div className="grid gap-4 p-4 sm:gap-5 sm:p-5 md:grid-cols-[200px_1fr]">
         <div className="relative mx-auto w-full max-w-[180px] md:max-w-none">
           <div className="grid aspect-square w-full place-items-center rounded-xl bg-white">
@@ -175,7 +175,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
             onClick={reroll}
             disabled={minting || minted !== null}
             aria-label="Reroll character"
-            className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-neutral-950/80 text-white backdrop-blur transition hover:bg-neutral-800 disabled:opacity-50"
+            className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-bg/80 text-fg backdrop-blur transition hover:bg-muted-bg disabled:opacity-50"
           >
             <Shuffle className="h-4 w-4" />
           </button>
@@ -183,21 +183,21 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
 
         <div className="flex min-w-0 flex-col gap-3">
           <div>
-            <h3 className="break-words text-lg font-bold tracking-tight text-white sm:text-xl">{agent.name}</h3>
-            <p className="mt-1 text-xs text-neutral-400">
+            <h3 className="break-words text-lg font-bold tracking-tight text-fg sm:text-xl">{agent.name}</h3>
+            <p className="mt-1 text-xs text-muted-fg">
               Numa Agent — on-chain attestation on Arc Testnet. Unlimited supply. Each
               character is unique and bound to your wallet via a soulbound mint tx.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-neutral-700 bg-neutral-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-neutral-200">
+            <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
               {agent.rarity}
             </span>
             {agent.capabilities.map((c) => (
               <span
                 key={c}
-                className="rounded-full border border-neutral-800 px-2 py-0.5 text-[10px] text-neutral-400"
+                className="rounded-full border border-border-c px-2 py-0.5 text-[10px] text-muted-fg"
               >
                 {c}
               </span>
@@ -205,20 +205,20 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-              <div className="text-neutral-500">Mint cost</div>
-              <div className="mt-0.5 font-semibold text-white">Gas only</div>
+            <div className="rounded-lg border border-border-c bg-bg px-3 py-2">
+              <div className="text-muted-fg">Mint cost</div>
+              <div className="mt-0.5 font-semibold text-fg">Gas only</div>
             </div>
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-              <div className="text-neutral-500">Chain</div>
-              <div className="mt-0.5 font-semibold text-white">Arc Testnet</div>
+            <div className="rounded-lg border border-border-c bg-bg px-3 py-2">
+              <div className="text-muted-fg">Chain</div>
+              <div className="mt-0.5 font-semibold text-fg">Arc Testnet</div>
             </div>
           </div>
 
           {minted ? (
-            <div className="flex flex-col gap-2 rounded-lg border border-neutral-700 bg-neutral-950 p-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                <Sparkles className="h-4 w-4" />
+            <div className="flex flex-col gap-2 rounded-lg border border-success/40 bg-success/10 p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-fg">
+                <Sparkles className="h-4 w-4 text-success" />
                 Minted on-chain. {minted.name} is yours.
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px]">
@@ -226,14 +226,14 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
                   href={minted.explorerUrl ?? '#'}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-[36px] items-center gap-1 break-all text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
+                  className="inline-flex min-h-[36px] items-center gap-1 break-all text-muted-fg underline decoration-border-c underline-offset-4 hover:text-fg"
                 >
                   <ExternalLink className="h-3 w-3 shrink-0" />
                   {minted.txHash?.slice(0, 14)}…
                 </a>
                 <a
                   href="/agent"
-                  className="inline-flex min-h-[36px] items-center gap-1 text-neutral-300 underline decoration-neutral-600 underline-offset-4 hover:text-white"
+                  className="inline-flex min-h-[36px] items-center gap-1 text-muted-fg underline decoration-border-c underline-offset-4 hover:text-fg"
                 >
                   View profile
                 </a>
@@ -244,7 +244,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
               type="button"
               disabled={minting || !address}
               onClick={() => void onMint()}
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-semibold text-neutral-900 transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary text-sm font-semibold text-primary-fg transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-muted-bg disabled:text-muted-fg"
             >
               {minting ? (
                 <>
@@ -258,7 +258,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
             </button>
           )}
 
-          {error ? <p className="text-xs text-red-400">{error}</p> : null}
+          {error ? <p className="text-xs text-danger">{error}</p> : null}
         </div>
       </div>
     </div>

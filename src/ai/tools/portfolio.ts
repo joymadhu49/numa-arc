@@ -1,33 +1,99 @@
 /**
- * Portfolio tool. Prefers App Kit's Unified Balance method if available,
- * else falls back to viem multicall ERC-20 balanceOf + native getBalance
- * for the tokens registered in `@/lib/tokens`.
+ * Portfolio tool — REAL multichain valuation.
+ *
+ * Combines multichain ERC-20 balance reads (`getMultichainBalances`, which walks
+ * every ACTIVE_CHAIN and reads USDC + EURC via viem) with LIVE prices
+ * (`priceSymbols` → CoinGecko + DefiLlama, no hardcoded $1 / *1.08).
+ *
+ * Output is the SHARED PortfolioCardData contract the chat card consumes:
+ *   { ok, address, totalUsd, change24hPct, chains: [{ chainKey, chainName, logo,
+ *     tokens: [{ symbol, name, balance, usd, priceUsd, change24hPct, logo? }] }] }
+ *
+ * Valuation notes:
+ *   - per-token usd  = balance * priceUsd
+ *   - totalUsd       = sum of per-token usd across all chains
+ *   - change24hPct   = price-weighted 24h change across tokens that have one
+ *
+ * TODO(pnl): true cost-basis PnL needs tx history (entry prices). This implements
+ * LIVE valuation + 24h price change only — NOT realized/unrealized PnL.
  */
 
-import { createPublicClient, http, formatUnits, type Address } from 'viem'
-import { appkit } from '@/lib/appkit'
-import { arcTestnet } from '@/chains/arc'
-import { ERC20_ABI, getTokensForChain, ARC_TESTNET_CHAIN_ID, type TokenInfo } from '@/lib/tokens'
+import type { Address } from 'viem'
+import { getMultichainBalances } from '@/lib/balances'
+import { priceSymbols, type TokenPrice } from '@/ai/tools/prices'
+import { ARC_TESTNET_CHAIN_ID } from '@/lib/tokens'
+
+/**
+ * Local TOKEN logos (served from /public/tokens), keyed by upper-case symbol.
+ * Token ROWS use these (USDC/EURC marks); the CHAIN logo is used only for the
+ * per-chain group header. Missing → the card falls back to a monogram chip.
+ */
+const TOKEN_LOGOS: Record<string, string> = {
+  USDC: '/tokens/usdc.png',
+  EURC: '/tokens/eurc.png',
+}
+
+function tokenLogo(symbol: string): string | undefined {
+  return TOKEN_LOGOS[symbol.toUpperCase()]
+}
 
 export interface PortfolioArgs {
   address: Address
-  /** Chain id to query. Defaults to Arc Testnet. */
+  /** Accepted for back-compat with existing callers; portfolio is multichain. */
   chainId?: number
 }
 
+/** One token row in the shared portfolio card. */
+export interface PortfolioCardToken {
+  symbol: string
+  name: string
+  balance: string
+  usd: number | null
+  priceUsd: number | null
+  change24hPct: number | null
+  logo?: string
+}
+
+/** One chain group in the shared portfolio card. */
+export interface PortfolioCardChain {
+  chainKey: string
+  chainName: string
+  logo: string
+  tokens: PortfolioCardToken[]
+}
+
+/** SHARED PortfolioCardData contract (what the chat card renders). */
+export type PortfolioCardData =
+  | {
+      ok: true
+      address: string
+      totalUsd: number
+      change24hPct: number | null
+      chains: PortfolioCardChain[]
+    }
+  | { ok: false; error: string }
+
+export type PortfolioResponse = PortfolioCardData
+
+// ---------------------------------------------------------------------------
+// Back-compat type exports. The portfolio result shape changed to the shared
+// PortfolioCardData contract above, but these names were previously exported,
+// so they are retained (as best-effort aliases) for any out-of-ownership
+// importer. New code should use PortfolioCardData / PortfolioCardToken.
+// ---------------------------------------------------------------------------
+
+/** @deprecated legacy shape — kept for back-compat; use PortfolioCardToken. */
 export interface TokenBalance {
   symbol: string
   name: string
   decimals: number
-  /** Raw balance as a decimal string (post-formatUnits). */
   amount: string
-  /** Optional USD value (when price lookup is wired). */
   usdValue?: number
-  /** ERC-20 address, or `null` for native asset. */
   address: Address | null
   chainId: number
 }
 
+/** @deprecated legacy shape — kept for back-compat; use PortfolioCardData. */
 export interface PortfolioResult {
   address: Address
   chainId: number
@@ -36,129 +102,78 @@ export interface PortfolioResult {
   source: 'appkit-unified' | 'viem-multicall'
 }
 
-export type PortfolioResponse =
-  | { ok: true; data: PortfolioResult }
-  | { ok: false; error: string }
-
-interface AppKitWithUnifiedBalance {
-  getUnifiedBalance?: (args: { address: Address }) => Promise<{
-    balances: Array<{
-      symbol: string
-      name?: string
-      decimals: number
-      amount: string
-      usdValue?: number
-      address?: Address | null
-      chainId: number
-    }>
-    totalUsd?: number
-  }>
-}
-
-async function tryUnifiedBalance(address: Address): Promise<PortfolioResult | null> {
-  const client = appkit as unknown as AppKitWithUnifiedBalance
-  if (typeof client.getUnifiedBalance !== 'function') return null
-  try {
-    const res = await client.getUnifiedBalance({ address })
-    const balances: TokenBalance[] = res.balances.map((b) => ({
-      symbol: b.symbol,
-      name: b.name ?? b.symbol,
-      decimals: b.decimals,
-      amount: b.amount,
-      usdValue: b.usdValue,
-      address: b.address ?? null,
-      chainId: b.chainId,
-    }))
-    const totalUsd =
-      res.totalUsd ?? balances.reduce((sum, b) => sum + (b.usdValue ?? 0), 0)
-    return {
-      address,
-      chainId: ARC_TESTNET_CHAIN_ID,
-      balances,
-      totalUsd,
-      source: 'appkit-unified',
-    }
-  } catch {
-    return null
-  }
-}
-
-async function fetchViaMulticall(
-  address: Address,
-  chainId: number,
-): Promise<PortfolioResult> {
-  if (chainId !== ARC_TESTNET_CHAIN_ID) {
-    // Only Arc Testnet is wired into viem here. Downstream agents can extend
-    // with additional chain clients via wagmi config.
-    throw new Error(`Unsupported chainId for multicall fallback: ${chainId}`)
-  }
-
-  const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http(),
-  })
-
-  const tokens = getTokensForChain(chainId)
-  const erc20Tokens: TokenInfo[] = tokens.filter((t): t is TokenInfo & { address: Address } =>
-    t.address !== null,
-  )
-
-  const erc20Results = await Promise.all(
-    erc20Tokens.map((t) =>
-      publicClient
-        .readContract({
-          address: t.address as Address,
-          abi: ERC20_ABI,
-          functionName: 'balanceOf',
-          args: [address],
-        })
-        .catch(() => 0n),
-    ),
-  )
-
-  const balances: TokenBalance[] = []
-
-  for (let i = 0; i < erc20Tokens.length; i++) {
-    const token = erc20Tokens[i]
-    const raw = erc20Results[i] as bigint
-    balances.push({
-      symbol: token.symbol,
-      name: token.name,
-      decimals: token.decimals,
-      amount: formatUnits(raw, token.decimals),
-      address: token.address,
-      chainId,
-    })
-  }
-
-  // Stable USD value: USDC = $1 per unit, EURC ~ $1.08 (rough, no live price wiring).
-  const totalUsd = balances.reduce((sum, b) => {
-    const amt = Number(b.amount)
-    if (!Number.isFinite(amt)) return sum
-    if (b.symbol === 'USDC') return sum + amt
-    if (b.symbol === 'EURC') return sum + amt * 1.08
-    return sum
-  }, 0)
-
-  return {
-    address,
-    chainId,
-    balances,
-    totalUsd,
-    source: 'viem-multicall',
-  }
-}
-
-export async function getPortfolio(args: PortfolioArgs): Promise<PortfolioResponse> {
+export async function getPortfolio(args: PortfolioArgs): Promise<PortfolioCardData> {
   try {
     if (!/^0x[a-fA-F0-9]{40}$/.test(args.address)) {
       return { ok: false, error: 'Invalid address' }
     }
-    // Force Arc-only. Skip unified balance (mixes chains).
-    const chainId = ARC_TESTNET_CHAIN_ID
-    void tryUnifiedBalance
-    const data = await fetchViaMulticall(args.address, chainId)
-    return { ok: true, data }
+
+    void ARC_TESTNET_CHAIN_ID // multichain now; arg kept only for back-compat.
+
+    const chainBalances = await getMultichainBalances(args.address)
+
+    // Collect the distinct symbols we actually hold so we price in one batch.
+    const symbols = new Set<string>()
+    for (const c of chainBalances) {
+      for (const t of c.tokens) symbols.add(t.symbol.toUpperCase())
+    }
+
+    const priceMap: Record<string, TokenPrice> =
+      symbols.size > 0 ? await priceSymbols(Array.from(symbols)) : {}
+
+    let totalUsd = 0
+    // Price-weighted 24h: sum(usd * pct) / sum(usd over tokens that HAVE a pct).
+    let weightedChangeNum = 0
+    let weightedChangeDen = 0
+
+    const chains: PortfolioCardChain[] = chainBalances.map((c) => {
+      const tokens: PortfolioCardToken[] = c.tokens.map((t) => {
+        const price = priceMap[t.symbol.toUpperCase()] ?? {
+          usd: null,
+          change24hPct: null,
+        }
+        const amount = Number(t.balance)
+        const priceUsd = price.usd
+        const usd =
+          priceUsd !== null && Number.isFinite(amount) ? amount * priceUsd : null
+
+        if (usd !== null) {
+          totalUsd += usd
+          if (price.change24hPct !== null) {
+            weightedChangeNum += usd * price.change24hPct
+            weightedChangeDen += usd
+          }
+        }
+
+        return {
+          symbol: t.symbol,
+          name: t.name,
+          balance: t.balance,
+          usd,
+          priceUsd,
+          change24hPct: price.change24hPct,
+          // Token ROW uses the USDC/EURC token logo (NOT the chain logo).
+          logo: tokenLogo(t.symbol),
+        }
+      })
+      return {
+        chainKey: c.chainKey,
+        chainName: c.chainName,
+        logo: c.logo,
+        tokens,
+      }
+    })
+
+    const change24hPct =
+      weightedChangeDen > 0 ? weightedChangeNum / weightedChangeDen : null
+
+    return {
+      ok: true,
+      address: args.address,
+      totalUsd,
+      change24hPct,
+      chains,
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown portfolio error'
     return { ok: false, error: message }

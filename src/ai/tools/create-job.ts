@@ -3,8 +3,8 @@
  *
  * Alias of `hire_agent` with defaults tuned for recurring tasks (e.g. weekly
  * portfolio rebalances). Conceptually the user is creating a job *spec* that
- * the Arcwise agent itself will fulfill — the provider defaults to the
- * Arcwise agent address.
+ * the Numa agent itself will fulfill — the provider defaults to the
+ * Numa agent address.
  */
 
 import type { Address, Hex, PublicClient, WalletClient } from 'viem'
@@ -45,7 +45,7 @@ export interface CreateJobToolInput {
   description: string
   /** USDC budget in atomic units (6 decimals). */
   amount: string
-  /** Optional provider override. Defaults to the Arcwise agent. */
+  /** Optional provider override. Defaults to the Numa agent. */
   provider?: Address
   /** Optional evaluator override. */
   evaluator?: Address
@@ -61,7 +61,7 @@ export interface CreateJobToolDeps {
 export const createJobTool = {
   name: 'create_job',
   description:
-    'Create a recurring ERC-8183 job (e.g. weekly portfolio rebalance). Defaults the provider to the Arcwise agent and funds the escrow in USDC.',
+    'Create a recurring ERC-8183 job (e.g. weekly portfolio rebalance). Defaults the provider to the Numa agent and funds the escrow in USDC.',
   inputSchema: {
     type: 'object',
     required: ['description', 'amount'],

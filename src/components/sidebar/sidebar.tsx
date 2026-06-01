@@ -34,12 +34,12 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 sm:w-16 md:w-60">
-      <div className="flex h-14 items-center justify-center border-b border-neutral-800 px-2 sm:px-3 md:justify-start">
+    <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col border-r border-border-c bg-bg sm:w-16 md:w-60">
+      <div className="flex h-14 items-center justify-center border-b border-border-c px-2 sm:px-3 md:justify-start">
         <button
           type="button"
           onClick={newChat}
-          className="flex items-center gap-2 text-neutral-100"
+          className="flex items-center gap-2 text-fg"
           aria-label="New chat"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -54,14 +54,14 @@ export function Sidebar() {
             const Icon = item.icon
             const active = isActive(pathname, item.href)
             const classes = cn(
-              'group flex w-full items-center justify-center gap-3 rounded-md px-2 py-2 text-sm transition-colors md:justify-start md:px-2.5',
+              'group flex w-full items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm transition md:justify-start md:px-2.5',
               active
-                ? 'bg-white text-neutral-900'
-                : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100',
+                ? 'bg-primary text-primary-fg'
+                : 'text-muted-fg hover:bg-muted-bg hover:text-fg',
             )
             const iconClasses = cn(
               'h-4 w-4 shrink-0',
-              active ? 'text-neutral-900' : 'text-neutral-500 group-hover:text-neutral-200',
+              active ? 'text-primary-fg' : 'text-muted-fg group-hover:text-fg',
             )
             const label = (
               <>
@@ -86,13 +86,13 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      <div className="flex flex-col items-center gap-2 border-t border-neutral-800 px-2 py-3 sm:gap-3 md:flex-row md:px-4">
+      <div className="flex flex-col items-center gap-2 border-t border-border-c px-2 py-3 sm:gap-3 md:flex-row md:px-4">
         <a
           href="https://x.com/zx_joy_"
           target="_blank"
           rel="noreferrer"
           aria-label="X / Twitter"
-          className="text-neutral-400 transition-colors hover:text-white"
+          className="text-muted-fg transition hover:text-fg"
         >
           <Twitter className="h-5 w-5" />
         </a>
@@ -101,7 +101,7 @@ export function Sidebar() {
           target="_blank"
           rel="noreferrer"
           aria-label="GitHub repository"
-          className="text-neutral-400 transition-colors hover:text-white"
+          className="text-muted-fg transition hover:text-fg"
         >
           <Github className="h-5 w-5" />
         </a>
@@ -110,7 +110,7 @@ export function Sidebar() {
           target="_blank"
           rel="noreferrer"
           aria-label="Telegram"
-          className="text-neutral-400 transition-colors hover:text-white"
+          className="text-muted-fg transition hover:text-fg"
         >
           <Send className="h-5 w-5" />
         </a>

@@ -3,7 +3,7 @@ import type { Address, Hex } from 'viem'
 
 /**
  * scan_tx — REQUIRED pre-flight before any swap/send/bridge.
- * The Arcwise system prompt mandates the AI call this tool before broadcasting
+ * The Numa system prompt mandates the AI call this tool before broadcasting
  * any value-moving transaction. Returns simulation outcome plus risk warnings.
  */
 export const scanTxTool = {

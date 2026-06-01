@@ -14,3 +14,6 @@ out
 session-summary.md
 PLAN.md
 .deploy-key
+
+# Claude Code local runtime
+.claude/

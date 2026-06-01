@@ -5,22 +5,60 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  getAddress,
   http,
   numberToHex,
+  isAddress,
   type Address,
   type Chain,
   type Hex,
   type PublicClient,
   type WalletClient,
 } from 'viem'
-import { baseSepolia, sepolia } from 'viem/chains'
-import { useAccount, useConfig } from 'wagmi'
-import { getConnectorClient, getWalletClient, switchChain } from 'wagmi/actions'
+import { useConfig } from 'wagmi'
 import { ViemAdapter } from '@circle-fin/adapter-viem-v2'
-import { ArcTestnet, BaseSepolia, EthereumSepolia } from '@circle-fin/app-kit/chains'
+import {
+  ArcTestnet,
+  ArbitrumSepolia,
+  AvalancheFuji,
+  BaseSepolia,
+  EthereumSepolia,
+  LineaSepolia,
+  OptimismSepolia,
+  PolygonAmoy,
+  UnichainSepolia,
+} from '@circle-fin/app-kit/chains'
 import { appkit } from '@/lib/appkit'
 import { arcTestnet } from '@/chains/arc'
+import {
+  ACTIVE_CHAINS,
+  resolveChainRef,
+  toAppKitChain,
+  toViemChain,
+  type ChainEntry,
+} from '@/chains/registry'
 import { classifyError, type ErrorKind } from '@/lib/errors'
+
+// ---------------------------------------------------------------------------
+// SAFETY GUARD CONSTANTS (TASK A). Generous testnet defaults; tune here.
+// These are denominated in USDC-equivalent human units (NOT base units).
+// ---------------------------------------------------------------------------
+
+/** Hard ceiling on a single write transaction's amount. */
+const PER_TX_CAP = 100_000
+/** Rolling 24h cap per (date, address). */
+const DAILY_CAP = 250_000
+/** Max allowed slippage in basis points (5%). */
+const MAX_SLIPPAGE_BPS = 500
+/** Default slippage when none / invalid supplied. */
+const DEFAULT_SLIPPAGE_BPS = 50
+
+/** Known burn / sink addresses we never allow `send` to target. */
+const BURN_ADDRESSES = new Set<string>([
+  '0x0000000000000000000000000000000000000000',
+  '0x000000000000000000000000000000000000dEaD',
+  '0xdEAD000000000000000042069420694206942069',
+].map((a) => a.toLowerCase()))
 
 export interface TxExecResult {
   ok: boolean
@@ -54,6 +92,7 @@ interface AppKitTxApi {
     tokenIn: string
     tokenOut: string
     amountIn: string
+    slippageBps?: number
     config?: { kitKey?: string }
   }) => Promise<{ txHash?: string; hash?: string; transactionHash?: string; explorerUrl?: string }>
   bridge: (params: {
@@ -76,41 +115,165 @@ interface AppKitTxApi {
 }
 
 const KIT_KEY = process.env.NEXT_PUBLIC_KIT_KEY ?? ''
-const SUPPORTED_CHAINS = [ArcTestnet, BaseSepolia, EthereumSepolia]
+
+/**
+ * App Kit supported-chain list, derived from the registry's ACTIVE set rather
+ * than a hardcoded 3-entry table. We map each ACTIVE registry key to its App Kit
+ * chain object so the adapter advertises every routable chain.
+ */
+const APPKIT_CHAIN_OBJECTS: Record<string, unknown> = {
+  'arc-testnet': ArcTestnet,
+  'ethereum-sepolia': EthereumSepolia,
+  'base-sepolia': BaseSepolia,
+  'arbitrum-sepolia': ArbitrumSepolia,
+  'optimism-sepolia': OptimismSepolia,
+  'polygon-amoy': PolygonAmoy,
+  'avalanche-fuji': AvalancheFuji,
+  'unichain-sepolia': UnichainSepolia,
+  'linea-sepolia': LineaSepolia,
+}
+
+const SUPPORTED_CHAINS = ACTIVE_CHAINS.map((c) => APPKIT_CHAIN_OBJECTS[c.key]).filter(
+  (x): x is unknown => x != null,
+)
 
 interface ChainInfo {
+  entry: ChainEntry
   viem: Chain
   wagmiId: number
+  appKit: string
 }
 
-const CHAIN_MAP: Record<string, ChainInfo> = {
-  Arc_Testnet: { viem: arcTestnet, wagmiId: arcTestnet.id },
-  Base_Sepolia: { viem: baseSepolia, wagmiId: baseSepolia.id },
-  Ethereum_Sepolia: { viem: sepolia, wagmiId: sepolia.id },
-}
-
-function resolveChain(
-  rawChain: unknown,
-): ChainInfo {
-  if (typeof rawChain === 'string') {
-    return CHAIN_MAP[rawChain] ?? { viem: arcTestnet, wagmiId: arcTestnet.id }
+/** Resolve a registry-backed ChainInfo from any loose chain reference. */
+function resolveChain(rawChain: unknown): ChainInfo {
+  const entry = resolveChainRef(rawChain)
+  const viem = entry.isArc ? arcTestnet : toViemChain(entry)
+  return {
+    entry,
+    viem,
+    wagmiId: entry.chainId,
+    appKit: toAppKitChain(entry) ?? 'Arc_Testnet',
   }
-  if (rawChain && typeof rawChain === 'object') {
-    const c = rawChain as { chain?: string; name?: string; chainId?: number; id?: number }
-    const enumName = c.chain
-    if (enumName && CHAIN_MAP[enumName]) return CHAIN_MAP[enumName]
-    const cid = c.chainId ?? c.id
-    if (typeof cid === 'number') {
-      for (const info of Object.values(CHAIN_MAP)) {
-        if (info.wagmiId === cid) return info
-      }
-    }
-  }
-  return { viem: arcTestnet, wagmiId: arcTestnet.id }
 }
 
 function explorerFor(hash: string, chain: Chain = arcTestnet): string {
   return `${chain.blockExplorers?.default.url ?? arcTestnet.blockExplorers.default.url}/tx/${hash}`
+}
+
+// ---------------------------------------------------------------------------
+// Guard helpers (TASK A). Applied BEFORE any kit.* / sendTransaction call.
+// ---------------------------------------------------------------------------
+
+/** Parse a human amount string defensively; returns NaN on garbage. */
+function parseAmount(raw: unknown): number {
+  if (typeof raw === 'number') return raw
+  if (typeof raw !== 'string') return NaN
+  const n = Number(raw.replace(/,/g, '').trim())
+  return Number.isFinite(n) ? n : NaN
+}
+
+/**
+ * Validate + checksum a recipient/contract address. Rejects non-addresses,
+ * the zero address, known burn sinks, and (for sends) the token contract
+ * itself. Returns the checksummed address or an error string.
+ */
+function validateRecipient(
+  to: unknown,
+  opts: { tokenAddress?: string } = {},
+): { ok: true; address: Address } | { ok: false; error: string; hint: string } {
+  if (typeof to !== 'string' || !isAddress(to)) {
+    return {
+      ok: false,
+      error: 'Invalid recipient address',
+      hint: 'The recipient must be a checksummed 0x-prefixed EVM address.',
+    }
+  }
+  let checksummed: Address
+  try {
+    checksummed = getAddress(to)
+  } catch {
+    return {
+      ok: false,
+      error: 'Recipient address failed checksum validation',
+      hint: 'Re-enter the address; the checksum did not validate.',
+    }
+  }
+  const lower = checksummed.toLowerCase()
+  if (lower === '0x0000000000000000000000000000000000000000' || BURN_ADDRESSES.has(lower)) {
+    return {
+      ok: false,
+      error: 'Refusing to send to a burn / zero address',
+      hint: 'This address would permanently destroy the funds.',
+    }
+  }
+  if (opts.tokenAddress && lower === opts.tokenAddress.toLowerCase()) {
+    return {
+      ok: false,
+      error: 'Refusing to send tokens to the token contract itself',
+      hint: 'Sending a token to its own contract address usually burns it.',
+    }
+  }
+  return { ok: true, address: checksummed }
+}
+
+/** Clamp + validate slippage bps into [0, MAX_SLIPPAGE_BPS]. */
+function clampSlippage(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SLIPPAGE_BPS
+  return Math.min(Math.floor(n), MAX_SLIPPAGE_BPS)
+}
+
+/** localStorage key for rolling daily spend, keyed by UTC date + address. */
+function dailySpendKey(address: string | undefined): string {
+  const day = new Date().toISOString().slice(0, 10)
+  return `numa:dailySpend:${day}:${(address ?? 'anon').toLowerCase()}`
+}
+
+function readDailySpend(address: string | undefined): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const v = window.localStorage.getItem(dailySpendKey(address))
+    const n = v ? Number(v) : 0
+    return Number.isFinite(n) ? n : 0
+  } catch {
+    return 0
+  }
+}
+
+function recordDailySpend(address: string | undefined, amount: number): void {
+  if (typeof window === 'undefined' || !Number.isFinite(amount) || amount <= 0) return
+  try {
+    const next = readDailySpend(address) + amount
+    window.localStorage.setItem(dailySpendKey(address), String(next))
+  } catch {
+    // localStorage unavailable (private mode); cap enforcement is best-effort.
+  }
+}
+
+/**
+ * Enforce per-tx + rolling daily spend caps. Reads the amount defensively; a
+ * non-numeric / zero amount passes the cap check (other guards handle bad
+ * amounts). Returns null on success or a TxExecResult error.
+ */
+function checkSpendCaps(amountRaw: unknown, address: string | undefined): TxExecResult | null {
+  const amount = parseAmount(amountRaw)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  if (amount > PER_TX_CAP) {
+    return failWith(
+      `Amount ${amount} exceeds the per-transaction cap of ${PER_TX_CAP}`,
+      'validation',
+      `Split into smaller transactions under ${PER_TX_CAP} USDC-equivalent.`,
+    )
+  }
+  const prior = readDailySpend(address)
+  if (prior + amount > DAILY_CAP) {
+    return failWith(
+      `This would exceed the rolling daily cap of ${DAILY_CAP} (already ${prior} today)`,
+      'validation',
+      `The daily safety cap resets at UTC midnight. Remaining today: ${Math.max(0, DAILY_CAP - prior)}.`,
+    )
+  }
+  return null
 }
 
 function buildAdapter(
@@ -120,7 +283,7 @@ function buildAdapter(
     getPublicClient: ({ chain }: { chain: unknown }): PublicClient => {
       const info = resolveChain(chain)
       if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-        console.debug('[arcwise] getPublicClient', { rawChain: chain, resolved: info.viem.name })
+        console.debug('[numa] getPublicClient', { rawChain: chain, resolved: info.viem.name })
       }
       return createPublicClient({ chain: info.viem, transport: http() })
     },
@@ -199,22 +362,46 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const tokenIn = String(input.fromToken ?? input.tokenIn ?? 'USDC')
           const tokenOut = String(input.toToken ?? input.tokenOut ?? 'EURC')
           const amount = String(input.amount ?? '0')
+          // GUARD: spend caps (per-tx + rolling daily).
+          const capErr = checkSpendCaps(amount, address)
+          if (capErr) return capErr
+          // GUARD: slippage clamp (App Kit computes its own minOut, so we
+          // enforce the cap on the REQUESTED value and surface it).
+          const slippageBps = clampSlippage(input.slippageBps)
+          // GUARD: chain resolved via registry (swap stays on its chain; Arc default).
+          const chain = resolveChain(input.chain).appKit
           const r = await kit.swap({
-            from: { adapter, chain: 'Arc_Testnet' },
+            from: { adapter, chain },
             tokenIn,
             tokenOut,
             amountIn: amount,
+            slippageBps,
             ...cfg,
           })
           const hash = r.txHash ?? r.hash ?? r.transactionHash
           if (!hash) return failWith('Swap returned no transaction hash', 'upstream', 'The aggregator did not produce a tx. Retry.')
+          recordDailySpend(address, parseAmount(amount))
           return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash) }
         }
 
         if (tool === 'bridge') {
-          const fromChain = String(input.fromChain ?? 'Arc_Testnet')
-          const toChain = String(input.toChain ?? 'Arc_Testnet')
           const amount = String(input.amount ?? '0')
+          // GUARD: spend caps.
+          const capErr = checkSpendCaps(amount, address)
+          if (capErr) return capErr
+          // GUARD: resolve BOTH chains via the registry (CCTP V2 domains, not
+          // opaque string enums). Reject same-chain bridges.
+          const fromEntry = resolveChain(input.fromChain).entry
+          const toEntry = resolveChain(input.toChain).entry
+          if (fromEntry.chainId === toEntry.chainId) {
+            return failWith(
+              'Source and destination chains are the same',
+              'validation',
+              'Pick two different chains to bridge between.',
+            )
+          }
+          const fromChain = toAppKitChain(fromEntry) ?? 'Arc_Testnet'
+          const toChain = toAppKitChain(toEntry) ?? 'Arc_Testnet'
           const r = await kit.bridge({
             from: { adapter, chain: fromChain },
             to: { adapter, chain: toChain },
@@ -236,29 +423,54 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
               'CCTP could not produce a burn tx. Verify source chain balance and allowance.',
             )
           }
+          recordDailySpend(address, parseAmount(amount))
           return {
             ok: true,
             hash,
-            explorerUrl: anyHash?.explorerUrl ?? explorerFor(hash),
-            data: { state: r.state, steps },
+            explorerUrl: anyHash?.explorerUrl ?? explorerFor(hash, fromEntry.isArc ? arcTestnet : toViemChain(fromEntry)),
+            data: {
+              state: r.state,
+              steps,
+              srcDomain: fromEntry.cctpDomain,
+              dstDomain: toEntry.cctpDomain,
+              fromKey: fromEntry.key,
+              toKey: toEntry.key,
+            },
           }
         }
 
         if (tool === 'send') {
-          const to = String(input.to ?? '')
           const amount = String(input.amount ?? '0')
           const token = String(input.token ?? 'USDC')
-          if (!to.startsWith('0x')) return failWith('Invalid recipient address', 'validation', 'The recipient must be a 0x-prefixed EVM address.')
+          // GUARD: chain resolved via registry; derive the token contract so we
+          // can reject sends to the token contract itself.
+          const sendChain = resolveChain(input.chain)
+          const tokenUpper = token.toUpperCase()
+          const tokenAddress =
+            tokenUpper === 'USDC'
+              ? sendChain.entry.usdc
+              : tokenUpper === 'EURC'
+                ? sendChain.entry.eurc
+                : isAddress(token)
+                  ? token
+                  : undefined
+          // GUARD: recipient validation (checksum, zero/burn, token-self).
+          const recip = validateRecipient(input.to, { tokenAddress })
+          if (!recip.ok) return failWith(recip.error, 'validation', recip.hint)
+          // GUARD: spend caps.
+          const capErr = checkSpendCaps(amount, address)
+          if (capErr) return capErr
           const r = await kit.send({
-            from: { adapter, chain: 'Arc_Testnet' },
-            to,
+            from: { adapter, chain: sendChain.appKit },
+            to: recip.address,
             amount,
             token,
             ...cfg,
           })
           const hash = r.txHash ?? r.hash
           if (!hash) return failWith('Send returned no transaction hash', 'upstream', 'The wallet adapter did not produce a tx. Retry.')
-          return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash) }
+          recordDailySpend(address, parseAmount(amount))
+          return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash, sendChain.viem) }
         }
 
         // Tools that build their own calldata server-side
@@ -270,6 +482,11 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
         }
         const serverTool = dispatchMap[tool]
         if (serverTool) {
+          // GUARD: spend caps on the primary amount(s) where present.
+          const capAmount =
+            input.amount ?? input.amountA ?? input.budgetUsdc ?? input.amountB
+          const capErr = checkSpendCaps(capAmount, address)
+          if (capErr) return capErr
           const connection = config.state.connections.get(config.state.current ?? '')
           const connector = connection?.connector ?? config.connectors[0]
           if (!connector) return failWith('No wallet connector', 'wallet_not_connected', 'Connect a wallet first.')
@@ -305,13 +522,18 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             return failWith(json.error ?? 'Tool returned no prepared tx', 'upstream', 'The server-side builder did not return calldata. Retry or check params.')
           }
           const prepared = json.data.prepared
+          // GUARD: checksum-validate the server-prepared destination.
+          if (!isAddress(prepared.to)) {
+            return failWith('Prepared transaction has an invalid destination', 'validation', 'The server-side builder returned a malformed address.')
+          }
           const hash = await walletClient.sendTransaction({
             account: walletClient.account!,
             chain: arcTestnet,
-            to: prepared.to as Address,
+            to: getAddress(prepared.to),
             data: prepared.data as Hex,
             value: BigInt(prepared.value ?? '0'),
           })
+          recordDailySpend(address, parseAmount(capAmount))
           return { ok: true, hash, explorerUrl: explorerFor(hash) }
         }
 

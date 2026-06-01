@@ -19,8 +19,17 @@ type CoinGeckoTrendingResponse = {
   coins: CoinGeckoTrendingItem[];
 };
 
+/**
+ * Trending token enriched with `rank` (CoinGecko market_cap_rank). Extends the
+ * route's TrendingToken shape so /api/trending consumers keep working while the
+ * get_trending execute can map to the shared TrendingCardData contract.
+ */
+export type TrendingTokenWithRank = TrendingToken & {
+  rank: number | null;
+};
+
 export type GetTrendingResult =
-  | { ok: true; tokens: TrendingToken[] }
+  | { ok: true; tokens: TrendingTokenWithRank[] }
   | { ok: false; error: string };
 
 function toNumber(v: number | string | undefined): number | null {
@@ -48,13 +57,14 @@ export async function getTrending(): Promise<GetTrendingResult> {
       return { ok: false, error: "Malformed CoinGecko payload" };
     }
 
-    const tokens: TrendingToken[] = json.coins.map(({ item }) => ({
+    const tokens: TrendingTokenWithRank[] = json.coins.map(({ item }) => ({
       id: item.id,
       symbol: item.symbol.toUpperCase(),
       name: item.name,
       price: toNumber(item.data?.price),
       change24h: item.data?.price_change_percentage_24h?.usd ?? null,
       marketCap: item.data?.market_cap ?? null,
+      rank: item.market_cap_rank,
     }));
 
     return { ok: true, tokens };

@@ -16,19 +16,21 @@ export function AuthGate({ children }: AuthGateProps) {
 
   return (
     <div className="flex h-full min-h-[60vh] items-center justify-center px-3 sm:px-4">
-      <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 shadow-lg sm:p-6">
+      <div className="w-full max-w-md rounded-2xl border border-border-c bg-card p-4 shadow-lg sm:p-6">
         <div className="mb-4 flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-neutral-300" />
-          <h2 className="text-lg font-semibold text-neutral-50">Sign in to Numa</h2>
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <ShieldCheck className="h-5 w-5" />
+          </span>
+          <h2 className="text-lg font-semibold text-fg">Sign in to Numa</h2>
         </div>
-        <p className="mb-5 text-sm text-neutral-400">
+        <p className="mb-5 text-sm text-muted-fg">
           Numa needs a wallet signature before sending any transaction. No funds move during sign-in.
         </p>
 
         {!auth.isConnected ? (
           <div className="space-y-2">
             {auth.connectors.length === 0 ? (
-              <p className="text-xs text-neutral-500">No wallet connectors detected.</p>
+              <p className="text-xs text-muted-fg">No wallet connectors detected.</p>
             ) : (
               auth.connectors.map((c, i) => (
                 <Button
@@ -47,9 +49,9 @@ export function AuthGate({ children }: AuthGateProps) {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300">
-              <span className="text-neutral-500">Connected as </span>
-              <span className="font-mono">
+            <div className="rounded-lg border border-border-c bg-bg px-3 py-2 text-xs text-muted-fg">
+              <span className="text-muted-fg">Connected as </span>
+              <span className="font-mono text-fg">
                 {auth.address ? `${auth.address.slice(0, 6)}…${auth.address.slice(-4)}` : ''}
               </span>
             </div>
@@ -65,7 +67,7 @@ export function AuthGate({ children }: AuthGateProps) {
             </Button>
             <button
               type="button"
-              className="w-full text-center text-xs text-neutral-500 hover:text-neutral-300"
+              className="w-full text-center text-xs text-muted-fg transition hover:text-fg"
               onClick={() => auth.signOut()}
             >
               Use a different wallet
@@ -73,9 +75,7 @@ export function AuthGate({ children }: AuthGateProps) {
           </div>
         )}
 
-        {auth.error ? (
-          <p className="mt-3 text-xs text-red-400">{auth.error}</p>
-        ) : null}
+        {auth.error ? <p className="mt-3 text-xs text-danger">{auth.error}</p> : null}
       </div>
     </div>
   )
