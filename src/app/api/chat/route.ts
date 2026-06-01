@@ -6,6 +6,7 @@ import {
 } from 'ai'
 import { cookies } from 'next/headers'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { isAddress } from 'viem'
 import { SYSTEM_PROMPT } from '@/ai/system-prompt'
 import { buildNumaTools } from '@/ai/tools'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/auth/session'
@@ -124,6 +125,12 @@ export async function POST(req: Request): Promise<Response> {
   if (!body?.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
     return jsonError('messages_required', 400)
   }
+  if (
+    body.address &&
+    (!isAddress(body.address) || body.address.toLowerCase() !== session.address)
+  ) {
+    return jsonError('address_mismatch', 403)
+  }
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
@@ -145,7 +152,7 @@ export async function POST(req: Request): Promise<Response> {
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(body.messages),
     // Read-tool execute() functions close over the connected wallet address.
-    tools: buildNumaTools({ address: body.address }),
+    tools: buildNumaTools({ address: session.address }),
     stopWhen: stepCountIs(MAX_STEPS),
   })
 

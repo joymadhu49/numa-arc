@@ -18,16 +18,25 @@ import { cn } from '@/lib/utils'
 // disabled with a "soon" tag.
 const SWITCHABLE = CHAINS.filter((c) => c.testnet).map((c) => c.key)
 
+type Eip1193Provider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
+  on?: (event: 'chainChanged', handler: (hex: string) => void) => void
+  removeListener?: (event: 'chainChanged', handler: (hex: string) => void) => void
+}
+
 function useActiveChainId() {
   const [chainId, setChainId] = useState<number | null>(null)
   useEffect(() => {
-    const eth = typeof window !== 'undefined' ? (window as any).ethereum : null
+    const eth =
+      typeof window !== 'undefined'
+        ? ((window as { ethereum?: Eip1193Provider }).ethereum ?? null)
+        : null
     if (!eth) return
     let cancelled = false
     eth
       .request({ method: 'eth_chainId' })
-      .then((hex: string) => {
-        if (!cancelled) setChainId(parseInt(hex, 16))
+      .then((hex) => {
+        if (!cancelled && typeof hex === 'string') setChainId(parseInt(hex, 16))
       })
       .catch(() => {})
     const onChainChanged = (hex: string) => setChainId(parseInt(hex, 16))

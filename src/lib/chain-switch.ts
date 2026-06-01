@@ -27,7 +27,7 @@ export async function switchWalletChain(entry: ChainEntry): Promise<void> {
           {
             chainId: hexId,
             chainName: entry.name,
-            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 6 },
+            nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
             rpcUrls: [entry.rpcUrl],
             blockExplorerUrls: [entry.explorerUrl],
           },

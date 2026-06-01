@@ -1,4 +1,3 @@
-import type { Address } from 'viem'
 import { createPublicClient, http } from 'viem'
 import { arcTestnet } from '@/chains/arc'
 import {

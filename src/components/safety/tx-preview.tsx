@@ -79,7 +79,7 @@ function formatGasUsdc(
       return `${gas.toString()} gas units`
     }
     const feeRaw = gas * price
-    const feeUsdc = Number(formatUnits(feeRaw, 6)) * gasPriceUsdc
+    const feeUsdc = Number(formatUnits(feeRaw, 18)) * gasPriceUsdc
     return `${feeUsdc.toFixed(4)} USDC`
   } catch {
     return '—'

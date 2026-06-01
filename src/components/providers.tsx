@@ -7,6 +7,7 @@ import { WagmiProvider, useReconnect } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from '@/lib/wagmi'
 import { patchCircleFetch } from '@/lib/circle-fetch-patch'
+import { AuthProvider } from '@/lib/use-auth'
 
 if (typeof window !== 'undefined') {
   patchCircleFetch()
@@ -32,9 +33,11 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
-          <AutoReconnect />
-          {children}
-          <Toaster />
+          <AuthProvider>
+            <AutoReconnect />
+            {children}
+            <Toaster />
+          </AuthProvider>
         </QueryClientProvider>
       </WagmiProvider>
     </ThemeProvider>
