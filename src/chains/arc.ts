@@ -26,7 +26,7 @@ if (!arcEntry) {
 export const arcTestnet = defineChain({
   id: arcEntry.chainId,
   name: arcEntry.name,
-  nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 6 },
+  nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
   rpcUrls: {
     default: { http: [arcEntry.rpcUrl] },
   },

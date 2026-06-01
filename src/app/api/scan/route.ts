@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import {
   simulateTx,
   scanToken,
   scanApprovals,
   revokeApproval,
 } from '@/lib/safety'
-import type { Address, Hex } from 'viem'
+import { isAddress, type Address, type Hex } from 'viem'
+import { verifySessionToken, SESSION_COOKIE } from '@/lib/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,11 +34,28 @@ interface ScanRequestBody {
   chainId?: number
 }
 
+function jsonError(error: string, status: number): NextResponse {
+  return NextResponse.json({ error }, { status })
+}
+
 function badRequest(message: string): NextResponse {
-  return NextResponse.json({ error: message }, { status: 400 })
+  return jsonError(message, 400)
+}
+
+function assertAddress(value: string | undefined, field: string): Address | NextResponse {
+  if (!value || !isAddress(value)) return badRequest(`${field} must be a valid EVM address`)
+  return value as Address
+}
+
+function sameAddress(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase()
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const jar = await cookies()
+  const session = verifySessionToken(jar.get(SESSION_COOKIE)?.value)
+  if (!session) return jsonError('unauthorized', 401)
+
   let body: ScanRequestBody
   try {
     body = (await req.json()) as ScanRequestBody
@@ -51,10 +70,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     switch (body.kind) {
       case 'tx': {
-        if (!body.from || !body.to) return badRequest('tx scan requires from and to')
+        const from = assertAddress(body.from, 'from')
+        if (from instanceof NextResponse) return from
+        if (!sameAddress(from, session.address)) return jsonError('address_mismatch', 403)
+        const to = assertAddress(body.to, 'to')
+        if (to instanceof NextResponse) return to
         const result = await simulateTx({
-          from: body.from as Address,
-          to: body.to as Address,
+          from,
+          to,
           data: body.data as Hex | undefined,
           value: body.value,
           chainId: body.chainId,
@@ -62,17 +85,23 @@ export async function POST(req: Request): Promise<NextResponse> {
         return NextResponse.json(result)
       }
       case 'token': {
-        if (!body.address) return badRequest('token scan requires address')
+        const address = assertAddress(body.address, 'address')
+        if (address instanceof NextResponse) return address
         const result = await scanToken({
-          address: body.address as Address,
+          address,
           chainId: body.chainId,
         })
         return NextResponse.json(result)
       }
       case 'approvals': {
-        if (!body.owner) return badRequest('approvals scan requires owner')
+        const owner = assertAddress(body.owner, 'owner')
+        if (owner instanceof NextResponse) return owner
+        if (!sameAddress(owner, session.address)) return jsonError('address_mismatch', 403)
+        if (!body.fromBlock) {
+          return badRequest('approvals scan requires fromBlock to bound the log range')
+        }
         const result = await scanApprovals({
-          owner: body.owner as Address,
+          owner,
           chainId: body.chainId,
           fromBlock: body.fromBlock,
           toBlock: body.toBlock,
@@ -80,11 +109,13 @@ export async function POST(req: Request): Promise<NextResponse> {
         return NextResponse.json(result)
       }
       case 'revoke': {
-        if (!body.token || !body.spender)
-          return badRequest('revoke requires token and spender')
+        const token = assertAddress(body.token, 'token')
+        if (token instanceof NextResponse) return token
+        const spender = assertAddress(body.spender, 'spender')
+        if (spender instanceof NextResponse) return spender
         const result = revokeApproval({
-          token: body.token as Address,
-          spender: body.spender as Address,
+          token,
+          spender,
         })
         return NextResponse.json(result)
       }

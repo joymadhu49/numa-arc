@@ -25,10 +25,6 @@ const aavePoolAbi = parseAbi([
   'function supply(address asset,uint256 amount,address onBehalfOf,uint16 referralCode) external',
 ])
 
-const morphoAbi = parseAbi([
-  'function supply((address loanToken,address collateralToken,address oracle,address irm,uint256 lltv) marketParams,uint256 assets,uint256 shares,address onBehalf,bytes data) external returns (uint256,uint256)',
-])
-
 function resolveProtocolAddress(protocol: string): Address | null {
   const p = protocol.toLowerCase()
   if (p.startsWith('aave')) {

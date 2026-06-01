@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 300;
-
 type LlamaPool = {
   project: string;
   symbol: string;

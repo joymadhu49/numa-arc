@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 60;
-
 type CoinGeckoTrendingItem = {
   item: {
     id: string;

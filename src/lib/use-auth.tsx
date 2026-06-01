@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useAccount, useConnect, useDisconnect, useSignMessage } from 'wagmi'
 import { classifyError } from '@/lib/errors'
 
@@ -39,7 +46,9 @@ export interface AuthState {
   signOut: () => void
 }
 
-export function useAuth(): AuthState {
+const AuthContext = createContext<AuthState | null>(null)
+
+function useAuthState(): AuthState {
   const { address, isConnected } = useAccount()
   const { connect, connectors, isPending: connectPending } = useConnect()
   const { disconnect } = useDisconnect()
@@ -120,7 +129,7 @@ export function useAuth(): AuthState {
     disconnect()
   }, [disconnect])
 
-  const signedIn = !!sessionAddress && (!address || sessionAddress === address.toLowerCase())
+  const signedIn = !!sessionAddress && !!address && sessionAddress === address.toLowerCase()
 
   return {
     address,
@@ -137,4 +146,17 @@ export function useAuth(): AuthState {
     signIn,
     signOut,
   }
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const auth = useAuthState()
+  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>
+}
+
+export function useAuth(): AuthState {
+  const auth = useContext(AuthContext)
+  if (!auth) {
+    throw new Error('useAuth must be used within AuthProvider')
+  }
+  return auth
 }

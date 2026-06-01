@@ -54,6 +54,21 @@ function str(v: unknown, fallback = ''): string {
   return v == null ? fallback : String(v)
 }
 
+function isSimulationResult(value: unknown): value is SimulateTxResult {
+  if (!value || typeof value !== 'object') return false
+  const o = value as Partial<SimulateTxResult>
+  return typeof o.ok === 'boolean' && Array.isArray(o.warnings) && typeof o.risk === 'string'
+}
+
+function extractSimulationResult(json: unknown): SimulateTxResult | null {
+  if (isSimulationResult(json)) return json
+  if (json && typeof json === 'object' && 'result' in json) {
+    const result = (json as { result?: unknown }).result
+    if (isSimulationResult(result)) return result
+  }
+  return null
+}
+
 /** Resolve a token symbol/address to a contract on a chain via the registry. */
 function resolveToken(symbolOrAddr: string, chainId: number): Address | undefined {
   if (isAddress(symbolOrAddr)) return getAddress(symbolOrAddr)
@@ -168,6 +183,7 @@ export function useTxPreview(): (e: PreviewInput) => Promise<TxPreviewData> {
           ok: boolean
           result?: SimulateTxResult
         }
+        const simulation = scanRes.ok ? extractSimulationResult(scanJson) : null
         return {
           summary: {
             from,
@@ -177,8 +193,8 @@ export function useTxPreview(): (e: PreviewInput) => Promise<TxPreviewData> {
             chainId: ARC_TESTNET_CHAIN_ID,
             action,
           },
-          simulation: scanJson.ok && scanJson.result ? scanJson.result : null,
-          simUnavailable: !(scanJson.ok && scanJson.result),
+          simulation,
+          simUnavailable: simulation === null,
         }
       } catch {
         return {

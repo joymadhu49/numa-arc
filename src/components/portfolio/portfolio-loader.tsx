@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState, type ReactElement } from 'react'
-import { useAccount } from 'wagmi'
 import { PortfolioCard, type PortfolioCardData } from '@/components/chat/cards/portfolio-card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AuthGate } from '@/components/auth/auth-gate'
+import { useAuth } from '@/lib/use-auth'
 
 /**
  * Loads the connected wallet's MULTICHAIN portfolio (grouped by chain, dust
@@ -11,12 +12,13 @@ import { Skeleton } from '@/components/ui/skeleton'
  * same polished card used in chat, so the page and chat never diverge.
  */
 export function PortfolioLoader(): ReactElement {
-  const { address, isConnected } = useAccount()
+  const auth = useAuth()
+  const { address, signedIn } = auth
   const [data, setData] = useState<PortfolioCardData | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!address) {
+    if (!address || !signedIn) {
       setData(null)
       return
     }
@@ -43,14 +45,13 @@ export function PortfolioLoader(): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [address])
+  }, [address, signedIn])
 
-  if (!isConnected || !address) {
+  if (!signedIn || !address) {
     return (
-      <div className="rounded-2xl border border-border-c bg-card p-8 text-center">
-        <p className="text-sm text-fg">Connect a wallet to view your portfolio.</p>
-        <p className="mt-2 text-xs text-muted-fg">Use the connect button in the bottom-left.</p>
-      </div>
+      <AuthGate>
+        <div />
+      </AuthGate>
     )
   }
 

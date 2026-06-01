@@ -496,8 +496,9 @@ interface NativeCurrency {
 /** Determine the native currency for a registry entry. */
 function nativeCurrencyFor(entry: ChainEntry): NativeCurrency {
   if (entry.isArc) {
-    // Arc uses USDC as its native gas token (6 decimals).
-    return { name: 'USD Coin', symbol: 'USDC', decimals: 6 }
+    // Arc uses native USDC gas with 18 decimals via eth_getBalance.
+    // The ERC-20 USDC precompile is still read/formatted separately at 6 decimals.
+    return { name: 'USD Coin', symbol: 'USDC', decimals: 18 }
   }
   switch (entry.key) {
     case 'polygon':
