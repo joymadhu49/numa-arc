@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Check, Search, Zap, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { CHAINS, getChain, type ChainEntry } from '@/chains/registry'
 import { ChainLogo } from '@/components/ui/chain-logo'
-import { switchWalletChain } from '@/lib/chain-switch'
+import { switchWalletChain, isUserRejection } from '@/lib/chain-switch'
+import { classifyError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 /**
@@ -49,14 +51,23 @@ function useActiveChainId() {
   return chainId
 }
 
-// Raw EIP-1193 switch with 4902 add-chain fallback, shared with the chat
-// "wrong network" recovery button. Rejections are intentionally swallowed here
-// (the user dismissed the wallet prompt — nothing to surface).
+// Raw EIP-1193 switch with the add-chain fallback (the wallet shows its own
+// "add this network?" permission prompt when it doesn't have the chain yet).
+// Every outcome gets feedback — a silent failure here looks like a dead click.
 async function switchChain(entry: ChainEntry) {
   try {
     await switchWalletChain(entry)
-  } catch {
-    /* no-op */
+    toast.success(`Switched to ${entry.name}`)
+  } catch (err) {
+    if (isUserRejection(err)) {
+      toast.info('Network switch canceled', {
+        description: `Approve the prompt in your wallet to use ${entry.name}.`,
+      })
+      return
+    }
+    toast.error(`Couldn’t switch to ${entry.name}`, {
+      description: classifyError(err).hint || 'Try adding the network in your wallet manually.',
+    })
   }
 }
 
