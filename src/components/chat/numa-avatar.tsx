@@ -3,9 +3,11 @@
 interface NumaAvatarProps {
   active?: boolean
   size?: number
+  /** Positioning classes from the call site (e.g. self-end to bottom-align in message rows). */
+  className?: string
 }
 
-export function NumaAvatar({ active = false, size = 36 }: NumaAvatarProps) {
+export function NumaAvatar({ active = false, size = 36, className = '' }: NumaAvatarProps) {
   const ringClass = active
     ? 'ring-2 ring-primary/50 shadow-glow'
     : 'ring-1 ring-border-c'
@@ -13,9 +15,10 @@ export function NumaAvatar({ active = false, size = 36 }: NumaAvatarProps) {
     <div
       className={
         // The Numa face is white SVG art, so the disc stays a constant brand-dark in both themes.
-        'relative flex shrink-0 items-center justify-center self-end overflow-hidden rounded-full bg-[#11141a] numa-bob ' +
+        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#11141a] numa-bob ' +
         ringClass +
-        (active ? ' numa-bob-fast' : '')
+        (active ? ' numa-bob-fast' : '') +
+        (className ? ` ${className}` : '')
       }
       style={{ width: size, height: size }}
       aria-hidden

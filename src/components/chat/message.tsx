@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
@@ -829,7 +829,7 @@ function TypingIndicator({ label }: { label: string }) {
 export function ThinkingRow() {
   return (
     <div className="flex justify-start gap-1 numa-card-in sm:gap-2" role="status" aria-label="Numa is thinking">
-      <NumaAvatar active size={36} />
+      <NumaAvatar active size={36} className="self-end" />
       <div className="flex min-w-0 flex-col gap-1 sm:gap-2">
         <div className="rounded-2xl rounded-bl-sm bg-card/80 px-3 py-2 ring-1 ring-border-c sm:px-3.5 sm:py-2.5">
           <TypingIndicator label="Thinking" />
@@ -884,7 +884,7 @@ function CopyButton({ text }: { text: string }) {
 // Message.
 // ---------------------------------------------------------------------------
 
-export function Message({
+function MessageImpl({
   message,
   active = false,
   onConfirm,
@@ -957,7 +957,7 @@ export function Message({
 
   return (
     <div className="group flex justify-start gap-1 sm:gap-2" aria-live="polite">
-      <NumaAvatar active={isActive} size={36} />
+      <NumaAvatar active={isActive} size={36} className="self-end" />
       <div className="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1 sm:max-w-[calc(85%-2.75rem)] sm:gap-2">
         {showTyping ? (
           <div className="rounded-2xl rounded-bl-sm bg-card/80 px-3 py-2 ring-1 ring-border-c sm:px-3.5 sm:py-2.5">
@@ -1010,3 +1010,11 @@ export function Message({
     </div>
   )
 }
+
+/**
+ * Memoized: during streaming the messages array changes on every token, but
+ * completed messages keep their object identity — memoizing skips re-running
+ * the markdown renderer and card trees for the whole back-scroll on each
+ * chunk, so long threads stay smooth.
+ */
+export const Message = memo(MessageImpl)
