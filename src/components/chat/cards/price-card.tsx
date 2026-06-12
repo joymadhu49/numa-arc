@@ -1,7 +1,7 @@
 'use client'
 
 import { LineChart } from 'lucide-react'
-import { CardShell, Delta, fmtUsd, CardError } from './_shared'
+import { CardShell, Delta, fmtUsd, CardError, CardEmpty } from './_shared'
 
 /** Matches SHARED contract: get_prices -> PriceCardData. */
 export type PriceCardData =
@@ -14,7 +14,10 @@ export function PriceCard({ data }: { data: PriceCardData }) {
   if (data.prices.length === 0) {
     return (
       <CardShell icon={<LineChart className="h-4 w-4" />} title="Prices">
-        <div className="px-4 py-4 text-xs text-muted-fg">No prices available.</div>
+        <CardEmpty
+          title="No prices found"
+          hint="The token may not be listed yet — try a different symbol, e.g. “price of USDC” or “ETH price”."
+        />
       </CardShell>
     )
   }

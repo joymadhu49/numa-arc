@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronDown, Wallet } from 'lucide-react'
-import { CardShell, TokenLogo, Delta, fmtUsd, CardError } from './_shared'
+import { CardShell, TokenLogo, Delta, fmtUsd, CardError, CardEmpty } from './_shared'
 import { ChainLogo } from '@/components/ui/chain-logo'
 import { cn } from '@/lib/utils'
 
@@ -75,7 +75,17 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
       </div>
 
       {nonEmpty.length === 0 ? (
-        <div className="px-3 py-3 text-xs text-muted-fg">No funded balances.</div>
+        dustCount > 0 ? (
+          <CardEmpty
+            title="Only dust balances"
+            hint={`All ${dustCount} ${dustCount === 1 ? 'balance is' : 'balances are'} under $0.01 — bridge or receive more testnet USDC to see them here.`}
+          />
+        ) : (
+          <CardEmpty
+            title="No funded balances"
+            hint="Get testnet USDC from a faucet, or try “bridge USDC to Arc” to fund this wallet."
+          />
+        )
       ) : (
         <>
           <div className="divide-y divide-border-c/60">

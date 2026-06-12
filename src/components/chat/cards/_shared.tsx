@@ -88,6 +88,8 @@ export function TokenLogo({
       src={src}
       alt={alt}
       style={dim}
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className={cn('shrink-0 rounded-full object-cover', className)}
     />
@@ -188,6 +190,19 @@ export function FlagRow({
 // ---------------------------------------------------------------------------
 // Empty / failed state inside a card.
 // ---------------------------------------------------------------------------
+
+/**
+ * Actionable empty state inside a card body — says what happened AND what to
+ * try next, instead of a bare "No X." line.
+ */
+export function CardEmpty({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="px-4 py-6 text-center" role="status">
+      <p className="text-sm font-medium text-fg">{title}</p>
+      {hint ? <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-muted-fg">{hint}</p> : null}
+    </div>
+  )
+}
 
 export function CardError({ message }: { message?: string }) {
   return (
