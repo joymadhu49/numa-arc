@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Copy, LogOut, ShieldCheck, Wallet } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
@@ -19,8 +20,15 @@ export function WalletPill() {
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [])
 
   if (!auth.isConnected || !auth.address) {
@@ -67,7 +75,7 @@ export function WalletPill() {
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-c bg-card px-2 py-1.5 text-sm text-fg transition hover:bg-muted-bg sm:justify-between sm:px-3',
+          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-c bg-card px-2 py-1.5 text-sm text-fg transition hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-between sm:px-3',
         )}
       >
         <span className="flex items-center gap-2 truncate">
@@ -85,9 +93,12 @@ export function WalletPill() {
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-fg transition hover:bg-muted-bg"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-fg transition hover:bg-muted-bg focus-visible:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={() => {
-              void navigator.clipboard.writeText(auth.address as string)
+              void navigator.clipboard
+                .writeText(auth.address as string)
+                .then(() => toast.success('Address copied'))
+                .catch(() => toast.error('Couldn’t copy address'))
               setOpen(false)
             }}
           >
@@ -96,7 +107,7 @@ export function WalletPill() {
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger transition hover:bg-muted-bg"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger transition hover:bg-muted-bg focus-visible:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={() => {
               auth.signOut()
               setOpen(false)
