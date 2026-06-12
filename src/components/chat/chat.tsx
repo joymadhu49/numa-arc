@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowUp, AlertTriangle, RotateCcw, Wallet, ShieldCheck, Network } from 'lucide-react'
+import { ArrowUp, AlertTriangle, RotateCcw, Square, Wallet, ShieldCheck, Network } from 'lucide-react'
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
@@ -123,7 +123,12 @@ function ChatError({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const c = classifyError(error)
   const arcChain = getChain('arc-testnet')
   return (
-    <div className="flex gap-2.5 numa-card-in sm:gap-3" role="alert">
+    <div
+      className="flex gap-2.5 numa-card-in sm:gap-3"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+    >
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-danger/40 bg-danger/10">
         <AlertTriangle className="h-4 w-4 text-danger" />
       </div>
@@ -197,7 +202,7 @@ export function Chat() {
     }),
   )
 
-  const { messages, sendMessage, setMessages, addToolResult, regenerate, status, error } =
+  const { messages, sendMessage, setMessages, addToolResult, regenerate, stop, status, error } =
     useChat<NumaUIMessage>({
       transport: transportRef.current,
       // Resume the model after a client tool result is supplied.
@@ -502,10 +507,13 @@ export function Chat() {
               aria-label="Message Numa"
               rows={1}
               placeholder={
-                signedIn
-                  ? 'Try: swap 10 USDC for EURC, or bridge to Base Sepolia'
-                  : 'Sign in with your wallet to chat'
+                loading
+                  ? 'Numa is thinking… press Stop to interrupt'
+                  : signedIn
+                    ? 'Try: swap 10 USDC for EURC, or bridge to Base Sepolia'
+                    : 'Sign in with your wallet to chat'
               }
+              aria-busy={loading}
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
@@ -513,14 +521,26 @@ export function Chat() {
               className="min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1.5 text-sm leading-6 text-fg placeholder:text-muted-fg focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
               disabled={loading || !signedIn}
             />
-            <button
-              type="submit"
-              disabled={loading || !signedIn || input.trim().length === 0}
-              aria-label="Send"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-muted-bg disabled:text-muted-fg"
-            >
-              <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-            </button>
+            {loading ? (
+              <button
+                type="button"
+                onClick={() => void stop()}
+                aria-label="Stop generating"
+                title="Stop generating"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border-c bg-card text-fg shadow-sm transition hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!signedIn || input.trim().length === 0}
+                aria-label="Send"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-muted-bg disabled:text-muted-fg"
+              >
+                <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            )}
           </form>
           <p className="mt-2 text-center text-2xs leading-relaxed text-muted-fg">
             Numa can make mistakes and is not financial advice. Always review transactions before

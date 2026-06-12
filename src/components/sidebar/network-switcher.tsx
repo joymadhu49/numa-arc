@@ -73,11 +73,12 @@ function NetworkRow({ entry, active, switchable, highlighted, onSelect }: RowPro
     <button
       type="button"
       role="option"
-      aria-selected={active}
+      aria-selected={active || (highlighted && switchable)}
+      aria-current={active ? 'true' : undefined}
       disabled={!switchable}
       onClick={onSelect}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition',
+        'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         switchable ? 'text-fg hover:bg-muted-bg' : 'cursor-not-allowed text-muted-fg',
         highlighted && switchable ? 'bg-muted-bg' : '',
       )}
