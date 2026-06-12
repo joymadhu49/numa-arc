@@ -1,11 +1,26 @@
 'use client'
 
-import { useMemo, useRef, useState, type ReactElement } from 'react'
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import type { Address, Hex } from 'viem'
 import { formatUnits } from 'viem'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Loader2, ShieldCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Copy,
+  Info,
+  Loader2,
+  ShieldCheck,
+  Wallet,
+} from 'lucide-react'
 import { FocusTrap } from 'focus-trap-react'
 import type { SimulateTxResult } from '@/lib/safety'
+import type { TxFlow } from '@/lib/use-tx-preview'
+import { getChain } from '@/chains/registry'
+import { ChainLogo } from '@/components/ui/chain-logo'
+import { TokenLogo } from '@/components/chat/cards/_shared'
 import { RiskBadge } from './risk-badge'
 import { cn } from '@/lib/utils'
 
@@ -26,6 +41,8 @@ interface TxSummary {
   // Optional human context (filled in by the caller / AI tool result)
   action?: string // e.g. "Swap 100 USDC for ETH"
   tokenSymbol?: string
+  /** Structured flow for the visual hero (swap / send / bridge). */
+  flow?: TxFlow
   /** Optional simulated balance changes for the Rabby-grade preview. */
   balanceChanges?: BalanceChange[]
   /** Approval scope, if this tx is an ERC-20 approval. */
@@ -66,12 +83,18 @@ function fmtUsd(n: number | null | undefined): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
 }
 
+/** Local token art (public/tokens); TokenLogo falls back to a monogram chip. */
+function tokenLogoSrc(symbol: string): string | undefined {
+  const s = symbol.toLowerCase()
+  return s === 'usdc' || s === 'eurc' ? `/tokens/${s}.png` : undefined
+}
+
 function formatGasUsdc(
   gasEstimate: string | undefined,
   gasPriceWei: string | undefined,
   gasPriceUsdc: number,
-): string {
-  if (!gasEstimate) return '—'
+): string | null {
+  if (!gasEstimate) return null
   try {
     const gas = BigInt(gasEstimate)
     const price = gasPriceWei ? BigInt(gasPriceWei) : 0n
@@ -82,15 +105,132 @@ function formatGasUsdc(
     const feeUsdc = Number(formatUnits(feeRaw, 18)) * gasPriceUsdc
     return `${feeUsdc.toFixed(4)} USDC`
   } catch {
-    return '—'
+    return null
   }
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <dt className="text-muted-fg">{label}</dt>
       <dd className="text-fg">{children}</dd>
+    </div>
+  )
+}
+
+/** Inline copy affordance for addresses/hashes, with a brief ✓ confirmation. */
+function CopyChip({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1600)
+        })
+      }}
+      className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-mono text-fg transition hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {shortenAddr(value)}
+      {copied ? (
+        <Check className="h-3 w-3 text-success" />
+      ) : (
+        <Copy className="h-3 w-3 text-muted-fg" />
+      )}
+    </button>
+  )
+}
+
+/**
+ * Visual hero for the action: what leaves the wallet, what arrives, where it
+ * goes — at a glance, before any fine print.
+ */
+function FlowHero({ flow, action }: { flow?: TxFlow; action?: string }) {
+  if (!flow) {
+    return action ? (
+      <div className="mb-4 rounded-xl border border-border-c bg-bg px-4 py-3 text-sm font-medium text-fg">
+        {action}
+      </div>
+    ) : null
+  }
+
+  if (flow.kind === 'swap') {
+    return (
+      <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-border-c bg-bg px-4 py-3.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <TokenLogo src={tokenLogoSrc(flow.token)} alt={flow.token} size={32} />
+          <div className="min-w-0">
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted-fg">You pay</div>
+            <div className="truncate text-sm font-semibold tabular-nums text-fg">
+              {flow.amount} {flow.token}
+            </div>
+          </div>
+        </div>
+        <ArrowRight className="h-4 w-4 shrink-0 text-muted-fg" aria-hidden />
+        <div className="flex min-w-0 items-center gap-2.5">
+          <TokenLogo src={tokenLogoSrc(flow.toToken ?? '')} alt={flow.toToken ?? ''} size={32} />
+          <div className="min-w-0">
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted-fg">
+              You receive
+            </div>
+            <div className="truncate text-sm font-semibold text-fg">{flow.toToken}</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (flow.kind === 'bridge') {
+    const fromChain = flow.fromChainKey ? getChain(flow.fromChainKey) : undefined
+    const toChain = flow.toChainKey ? getChain(flow.toChainKey) : undefined
+    return (
+      <div className="mb-4 rounded-xl border border-border-c bg-bg px-4 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <TokenLogo src={tokenLogoSrc(flow.token)} alt={flow.token} size={32} />
+          <div>
+            <div className="text-2xs font-medium uppercase tracking-wide text-muted-fg">Bridge</div>
+            <div className="text-sm font-semibold tabular-nums text-fg">
+              {flow.amount} {flow.token}
+            </div>
+          </div>
+        </div>
+        {fromChain && toChain ? (
+          <div className="mt-3 flex items-center gap-2 border-t border-border-c/60 pt-3 text-xs text-fg">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <ChainLogo src={fromChain.logo} name={fromChain.name} chainKey={fromChain.key} size={16} />
+              <span className="truncate">{fromChain.name}</span>
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-fg" aria-hidden />
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <ChainLogo src={toChain.logo} name={toChain.name} chainKey={toChain.key} size={16} />
+              <span className="truncate">{toChain.name}</span>
+            </span>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  // send
+  return (
+    <div className="mb-4 rounded-xl border border-border-c bg-bg px-4 py-3.5">
+      <div className="flex items-center gap-2.5">
+        <TokenLogo src={tokenLogoSrc(flow.token)} alt={flow.token} size={32} />
+        <div>
+          <div className="text-2xs font-medium uppercase tracking-wide text-muted-fg">Send</div>
+          <div className="text-sm font-semibold tabular-nums text-fg">
+            {flow.amount} {flow.token}
+          </div>
+        </div>
+      </div>
+      {flow.recipient ? (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border-c/60 pt-3 text-xs">
+          <span className="text-muted-fg">To recipient</span>
+          <CopyChip value={flow.recipient} label="recipient address" />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -115,6 +255,7 @@ export function TxPreview({
     () => formatGasUsdc(simulation?.gasEstimate, gasPriceWei, gasPriceUsdc),
     [simulation?.gasEstimate, gasPriceWei, gasPriceUsdc],
   )
+  const chain = summary.chainId != null ? getChain(summary.chainId) : undefined
 
   // High-risk → require a brief press-and-hold before the confirm fires.
   const [holdProgress, setHoldProgress] = useState(0)
@@ -145,6 +286,9 @@ export function TxPreview({
 
   const confirmDisabled = loading || reverted || signing
   const changes = summary.balanceChanges ?? []
+  // A swap/bridge "to" that's just the user's own wallet is plumbing, not a
+  // recipient — showing the same address twice reads like a bug.
+  const showTo = summary.to.toLowerCase() !== summary.from.toLowerCase()
 
   return (
     // Trap focus while reviewing; Esc cancels (but not mid-sign), and focus
@@ -168,20 +312,24 @@ export function TxPreview({
         tabIndex={-1}
         className="numa-card-in w-full max-w-md overflow-hidden rounded-2xl border border-border-c bg-popover shadow-2xl focus:outline-none"
       >
-        <div className="flex items-center justify-between border-b border-border-c px-5 py-4">
-          <h2 id="tx-preview-title" className="text-base font-semibold text-fg">
-            Review transaction
-          </h2>
+        <div className="flex items-center justify-between gap-2 border-b border-border-c px-5 py-4">
+          <div className="min-w-0">
+            <h2 id="tx-preview-title" className="text-base font-semibold text-fg">
+              Review transaction
+            </h2>
+            {chain ? (
+              <span className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-muted-fg">
+                <ChainLogo src={chain.logo} name={chain.name} chainKey={chain.key} size={14} />
+                {chain.name}
+              </span>
+            ) : null}
+          </div>
           <RiskBadge risk={risk} />
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto numa-scroll px-5 py-4">
-          {/* Plain-English action summary */}
-          {summary.action ? (
-            <div className="mb-4 rounded-lg border border-border-c bg-bg p-3 text-sm text-fg">
-              {summary.action}
-            </div>
-          ) : null}
+          {/* What moves, at a glance. */}
+          <FlowHero flow={summary.flow} action={summary.action} />
 
           {/* Simulated balance-change rows */}
           {changes.length > 0 ? (
@@ -222,11 +370,18 @@ export function TxPreview({
             </div>
             <dl className="space-y-2 rounded-lg border border-border-c bg-bg p-3 text-sm">
               <Row label="From">
-                <span className="font-mono">{shortenAddr(summary.from)}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="rounded-full bg-muted-bg px-1.5 py-0.5 text-2xs font-medium text-muted-fg">
+                    Your wallet
+                  </span>
+                  <CopyChip value={summary.from} label="your wallet address" />
+                </span>
               </Row>
-              <Row label="To">
-                <span className="font-mono">{shortenAddr(summary.to)}</span>
-              </Row>
+              {showTo ? (
+                <Row label="To">
+                  <CopyChip value={summary.to} label="destination address" />
+                </Row>
+              ) : null}
               {summary.value && summary.value !== '0' ? (
                 <Row label="Value">
                   <span className="font-mono">{summary.value} wei</span>
@@ -249,13 +404,13 @@ export function TxPreview({
               ) : null}
               {summary.approval ? (
                 <Row label="Spender">
-                  <span className="font-mono">{shortenAddr(summary.approval.spender)}</span>
+                  <CopyChip value={summary.approval.spender} label="spender address" />
                 </Row>
               ) : null}
               {summary.slippagePct != null ? (
                 <Row label="Max slippage">{summary.slippagePct}%</Row>
               ) : null}
-              <Row label="Network fee">{gasDisplay}</Row>
+              {gasDisplay ? <Row label="Network fee">{gasDisplay}</Row> : null}
               <Row label="Simulation">
                 <span
                   className={
@@ -270,11 +425,11 @@ export function TxPreview({
                     ? 'Running…'
                     : simulation === null
                       ? simUnavailable
-                        ? 'Unavailable'
+                        ? 'Wallet verifies on sign'
                         : 'Pending'
                       : reverted
                         ? 'Will revert'
-                        : 'OK'}
+                        : 'Passed'}
                 </span>
               </Row>
             </dl>
@@ -299,14 +454,12 @@ export function TxPreview({
           ) : null}
 
           {simUnavailable && simulation === null ? (
-            <div className="flex items-start gap-1.5 rounded-lg border border-border-c bg-bg p-3 text-2xs leading-relaxed text-muted-fg">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+            <div className="flex items-start gap-2 rounded-lg border border-border-c bg-bg p-3 text-2xs leading-relaxed text-muted-fg">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                Pre-sign simulation is not available for this action — Circle App Kit
-                executes it as a single abstracted call and does not expose raw
-                calldata beforehand. Review the action, amount, and recipient above,
-                then confirm in your wallet (your wallet shows the final signing
-                details).
+                This action runs as a single abstracted call, so Numa can’t simulate it ahead
+                of time. Check the amount and recipient above — your wallet shows the final
+                signing details before anything moves.
               </span>
             </div>
           ) : !highRisk && warnings.length === 0 && !reverted && simulation !== null ? (
@@ -322,7 +475,7 @@ export function TxPreview({
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="rounded-lg border border-border-c bg-card px-4 py-2 text-sm text-fg transition hover:bg-muted-bg disabled:opacity-50"
+            className="rounded-lg border border-border-c bg-card px-4 py-2 text-sm text-fg transition hover:bg-muted-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             Cancel
           </button>
@@ -335,7 +488,7 @@ export function TxPreview({
               onTouchStart={startHold}
               onTouchEnd={endHold}
               disabled={confirmDisabled}
-              className="relative overflow-hidden rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-danger-fg transition hover:brightness-110 disabled:opacity-50"
+              className="relative overflow-hidden rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-danger-fg transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <span
                 className="absolute inset-0 bg-black/25"
@@ -352,10 +505,14 @@ export function TxPreview({
               type="button"
               onClick={onConfirm}
               disabled={confirmDisabled}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg transition hover:brightness-110 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
-              {loading || signing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              {signing ? 'Waiting for wallet…' : 'Confirm'}
+              {loading || signing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wallet className="h-3.5 w-3.5" />
+              )}
+              {signing ? 'Waiting for wallet…' : 'Confirm in wallet'}
             </button>
           )}
         </div>

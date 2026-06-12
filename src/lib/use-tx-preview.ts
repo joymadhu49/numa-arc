@@ -24,6 +24,24 @@ import { getChain, resolveChainRef } from '@/chains/registry'
 
 const ARC_TESTNET_CHAIN_ID = 5042002
 
+/**
+ * Structured description of what the action moves, so the preview modal can
+ * render a visual flow (token in → token out, chain → chain) instead of only
+ * a prose line.
+ */
+export interface TxFlow {
+  kind: 'swap' | 'send' | 'bridge'
+  amount: string
+  token: string
+  /** Swap only: the token received. */
+  toToken?: string
+  /** Bridge only: registry chain keys. */
+  fromChainKey?: string
+  toChainKey?: string
+  /** Send only: validated recipient. */
+  recipient?: string
+}
+
 /** Subset of TxPreview's TxSummary we build here (kept structurally compatible). */
 export interface TxPreviewSummary {
   from: Address
@@ -34,6 +52,7 @@ export interface TxPreviewSummary {
   action?: string
   tokenSymbol?: string
   slippagePct?: number
+  flow?: TxFlow
 }
 
 export interface TxPreviewData {
@@ -119,14 +138,30 @@ export function useTxPreview(): (e: PreviewInput) => Promise<TxPreviewData> {
     if (APPKIT_NATIVE.has(tool)) {
       let to: Address = from
       let tokenSymbol: string | undefined
+      let flow: TxFlow | undefined
+      const amount = str(o.amount, '0')
       if (tool === 'send') {
         const toRaw = str(o.to)
         if (isAddress(toRaw)) to = getAddress(toRaw)
         tokenSymbol = str(o.token, 'USDC')
+        flow = { kind: 'send', amount, token: tokenSymbol, recipient: to }
       } else if (tool === 'swap') {
         tokenSymbol = str(o.fromToken ?? o.tokenIn, 'USDC')
+        flow = {
+          kind: 'swap',
+          amount,
+          token: tokenSymbol,
+          toToken: str(o.toToken ?? o.tokenOut, 'EURC'),
+        }
       } else if (tool === 'bridge') {
         tokenSymbol = str(o.token, 'USDC')
+        flow = {
+          kind: 'bridge',
+          amount,
+          token: tokenSymbol,
+          fromChainKey: resolveChainRef(o.fromChain).key,
+          toChainKey: resolveChainRef(o.toChain).key,
+        }
       }
       const slippageBps = Number(o.slippageBps)
       return {
@@ -137,6 +172,7 @@ export function useTxPreview(): (e: PreviewInput) => Promise<TxPreviewData> {
           action,
           tokenSymbol,
           slippagePct: Number.isFinite(slippageBps) && slippageBps > 0 ? slippageBps / 100 : undefined,
+          flow,
         },
         simulation: null,
         simUnavailable: true,
