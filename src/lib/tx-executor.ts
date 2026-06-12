@@ -16,19 +16,6 @@ import {
   type WalletClient,
 } from 'viem'
 import { useConfig } from 'wagmi'
-import { ViemAdapter } from '@circle-fin/adapter-viem-v2'
-import {
-  ArcTestnet,
-  ArbitrumSepolia,
-  AvalancheFuji,
-  BaseSepolia,
-  EthereumSepolia,
-  LineaSepolia,
-  OptimismSepolia,
-  PolygonAmoy,
-  UnichainSepolia,
-} from '@circle-fin/app-kit/chains'
-import { appkit } from '@/lib/appkit'
 import { arcTestnet } from '@/chains/arc'
 import {
   ACTIVE_CHAINS,
@@ -116,26 +103,51 @@ interface AppKitTxApi {
 
 const KIT_KEY = process.env.NEXT_PUBLIC_KIT_KEY ?? ''
 
-/**
- * App Kit supported-chain list, derived from the registry's ACTIVE set rather
- * than a hardcoded 3-entry table. We map each ACTIVE registry key to its App Kit
- * chain object so the adapter advertises every routable chain.
- */
-const APPKIT_CHAIN_OBJECTS: Record<string, unknown> = {
-  'arc-testnet': ArcTestnet,
-  'ethereum-sepolia': EthereumSepolia,
-  'base-sepolia': BaseSepolia,
-  'arbitrum-sepolia': ArbitrumSepolia,
-  'optimism-sepolia': OptimismSepolia,
-  'polygon-amoy': PolygonAmoy,
-  'avalanche-fuji': AvalancheFuji,
-  'unichain-sepolia': UnichainSepolia,
-  'linea-sepolia': LineaSepolia,
+type ViemAdapterCtor = typeof import('@circle-fin/adapter-viem-v2').ViemAdapter
+
+interface AppKitRuntime {
+  ViemAdapter: ViemAdapterCtor
+  kit: AppKitTxApi
+  /**
+   * App Kit supported-chain list, derived from the registry's ACTIVE set rather
+   * than a hardcoded 3-entry table. We map each ACTIVE registry key to its App
+   * Kit chain object so the adapter advertises every routable chain.
+   */
+  supportedChains: unknown[]
 }
 
-const SUPPORTED_CHAINS = ACTIVE_CHAINS.map((c) => APPKIT_CHAIN_OBJECTS[c.key]).filter(
-  (x): x is unknown => x != null,
-)
+let appKitRuntime: Promise<AppKitRuntime> | null = null
+
+/**
+ * The Circle App Kit SDK is by far the heaviest dependency in the chat bundle
+ * and is only needed at signing time. Loading it on first execution keeps it
+ * out of the initial page JS; the promise is cached so later txs are instant.
+ */
+function loadAppKit(): Promise<AppKitRuntime> {
+  appKitRuntime ??= Promise.all([
+    import('@circle-fin/adapter-viem-v2'),
+    import('@/lib/appkit'),
+    import('@circle-fin/app-kit/chains'),
+  ]).then(([adapterMod, kitMod, chains]) => {
+    const objects: Record<string, unknown> = {
+      'arc-testnet': chains.ArcTestnet,
+      'ethereum-sepolia': chains.EthereumSepolia,
+      'base-sepolia': chains.BaseSepolia,
+      'arbitrum-sepolia': chains.ArbitrumSepolia,
+      'optimism-sepolia': chains.OptimismSepolia,
+      'polygon-amoy': chains.PolygonAmoy,
+      'avalanche-fuji': chains.AvalancheFuji,
+      'unichain-sepolia': chains.UnichainSepolia,
+      'linea-sepolia': chains.LineaSepolia,
+    }
+    return {
+      ViemAdapter: adapterMod.ViemAdapter,
+      kit: kitMod.appkit as unknown as AppKitTxApi,
+      supportedChains: ACTIVE_CHAINS.map((c) => objects[c.key]).filter((x) => x != null),
+    }
+  })
+  return appKitRuntime
+}
 
 interface ChainInfo {
   entry: ChainEntry
@@ -277,9 +289,10 @@ function checkSpendCaps(amountRaw: unknown, address: string | undefined): TxExec
 }
 
 function buildAdapter(
+  { ViemAdapter, supportedChains }: AppKitRuntime,
   config: ReturnType<typeof useConfig>,
   address?: Address,
-): ViemAdapter {
+): InstanceType<ViemAdapterCtor> {
   const adapterOptions = {
     getPublicClient: ({ chain }: { chain: unknown }): PublicClient => {
       const info = resolveChain(chain)
@@ -341,11 +354,11 @@ function buildAdapter(
   }
   const capabilities = {
     addressContext: 'user-controlled' as const,
-    supportedChains: SUPPORTED_CHAINS,
+    supportedChains,
   }
   return new ViemAdapter(
-    adapterOptions as unknown as ConstructorParameters<typeof ViemAdapter>[0],
-    capabilities as unknown as ConstructorParameters<typeof ViemAdapter>[1],
+    adapterOptions as unknown as ConstructorParameters<ViemAdapterCtor>[0],
+    capabilities as unknown as ConstructorParameters<ViemAdapterCtor>[1],
   )
 }
 
@@ -361,8 +374,9 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
   return useCallback(
     async ({ tool, input, address }: ExecInput): Promise<TxExecResult> => {
       try {
-        const adapter = buildAdapter(config, address)
-        const kit = appkit as unknown as AppKitTxApi
+        const runtime = await loadAppKit()
+        const adapter = buildAdapter(runtime, config, address)
+        const kit = runtime.kit
         const cfg = KIT_KEY ? { config: { kitKey: KIT_KEY } } : {}
 
         if (tool === 'swap') {

@@ -14,8 +14,15 @@ import { NumaAvatar } from './numa-avatar'
 import { useAuth } from '@/lib/use-auth'
 import { AuthGate } from '@/components/auth/auth-gate'
 import { useTxExecutor } from '@/lib/tx-executor'
+import dynamic from 'next/dynamic'
 import { useTxPreview, type TxPreviewData } from '@/lib/use-tx-preview'
-import { TxPreview } from '@/components/safety/tx-preview'
+
+// Loaded on first confirm — keeps the review modal (and its focus-trap dep)
+// out of the initial chat bundle.
+const TxPreview = dynamic(
+  () => import('@/components/safety/tx-preview').then((m) => m.TxPreview),
+  { ssr: false },
+)
 import { WalletPill } from '@/components/sidebar/wallet-pill'
 import { NetworkSwitcher } from '@/components/sidebar/network-switcher'
 import { ChainLogo } from '@/components/ui/chain-logo'
@@ -442,6 +449,9 @@ export function Chat() {
     [input, submit],
   )
 
+  // Stable identity so the memoized last <Message> doesn't re-render per keystroke.
+  const onRegenerate = useCallback(() => void regenerate(), [regenerate])
+
   const empty = messages.length === 0
   const lastIndex = messages.length - 1
 
@@ -518,7 +528,7 @@ export function Chat() {
                     confirmingId={confirmingId}
                     onRegenerate={
                       !loading && i === lastIndex && m.role === 'assistant'
-                        ? () => void regenerate()
+                        ? onRegenerate
                         : undefined
                     }
                   />
