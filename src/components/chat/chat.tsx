@@ -23,6 +23,13 @@ import { getActiveChains, getChain } from '@/chains/registry'
 import { isSigningTool } from '@/ai/tools'
 import { classifyError } from '@/lib/errors'
 import { switchWalletChain } from '@/lib/chain-switch'
+import {
+  latestConversationId,
+  loadConversation,
+  saveConversation,
+} from '@/lib/chat-history'
+import { useTxTracker } from '@/lib/tx-tracker'
+import { TxIndicator } from './tx-indicator'
 import { toast } from 'sonner'
 
 /** A write action pending in the simulate→review→confirm modal. */
@@ -188,6 +195,12 @@ export function Chat() {
   const stickToBottom = useRef(true)
   const searchParams = useSearchParams()
   const newKey = searchParams?.get('new') ?? null
+  const convParam = searchParams?.get('c') ?? null
+  // Current conversation id for local persistence (assigned on first save).
+  const convIdRef = useRef<string | null>(null)
+  // Tracks which address we already restored history for (once per wallet).
+  const restoredFor = useRef<string | null>(null)
+  const trackTx = useTxTracker((s) => s.track)
 
   // Keep latest address available to the transport body without re-creating it.
   const addressRef = useRef<string | undefined>(address)
@@ -226,6 +239,7 @@ export function Chat() {
 
   useEffect(() => {
     if (!newKey) return
+    convIdRef.current = null
     setMessages([])
     setInput('')
     setConfirmingId(null)
@@ -233,6 +247,38 @@ export function Chat() {
     setPreview(null)
     setPreviewLoading(false)
   }, [newKey, setMessages])
+
+  // Restore the last conversation once per wallet on mount (unless the URL
+  // explicitly asks for a fresh chat or a specific conversation).
+  useEffect(() => {
+    if (!address || !signedIn || restoredFor.current === address) return
+    restoredFor.current = address
+    if (newKey) return
+    const id = convParam ?? latestConversationId(address)
+    if (!id) return
+    const msgs = loadConversation<NumaUIMessage>(address, id)
+    if (msgs && msgs.length > 0) {
+      convIdRef.current = id
+      setMessages(msgs)
+    }
+  }, [address, signedIn, newKey, convParam, setMessages])
+
+  // Open a specific conversation when navigated to from /history.
+  useEffect(() => {
+    if (!address || !signedIn || !convParam || convParam === convIdRef.current) return
+    const msgs = loadConversation<NumaUIMessage>(address, convParam)
+    if (msgs && msgs.length > 0) {
+      convIdRef.current = convParam
+      setMessages(msgs)
+    }
+  }, [convParam, address, signedIn, setMessages])
+
+  // Persist the conversation locally whenever a turn settles (not mid-stream).
+  useEffect(() => {
+    if (!address || messages.length === 0 || loading) return
+    if (!convIdRef.current) convIdRef.current = crypto.randomUUID()
+    saveConversation(address, convIdRef.current, messages)
+  }, [messages, loading, address])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -312,6 +358,16 @@ export function Chat() {
         address: address as `0x${string}` | undefined,
       })
       if (result.ok) {
+        if (result.hash) {
+          // Register with the header tracker so progress stays visible after
+          // the toast dismisses or the in-chat card scrolls away.
+          trackTx({
+            hash: result.hash,
+            chainKey: String(args.chain ?? args.fromChain ?? 'arc-testnet'),
+            action: toolName,
+            explorerUrl: result.explorerUrl,
+          })
+        }
         toast.success('Transaction submitted', {
           description: 'Broadcast to the network — track progress in the chat.',
           action: result.explorerUrl
@@ -356,7 +412,7 @@ export function Chat() {
       setPending(null)
       setPreview(null)
     }
-  }, [pending, confirmingId, execTx, address, addSignResult])
+  }, [pending, confirmingId, execTx, address, addSignResult, trackTx])
 
   const submit = useCallback(
     (raw: string) => {
@@ -399,6 +455,7 @@ export function Chat() {
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <TxIndicator />
           <NetworkSwitcher />
           <div className="w-auto sm:w-44">
             <WalletPill />
