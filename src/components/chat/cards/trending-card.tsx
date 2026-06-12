@@ -1,7 +1,7 @@
 'use client'
 
 import { TrendingUp } from 'lucide-react'
-import { CardShell, Delta, fmtUsd, CardError } from './_shared'
+import { CardShell, Delta, fmtUsd, CardError, CardEmpty } from './_shared'
 
 /** Matches SHARED contract: get_trending -> TrendingCardData. */
 export type TrendingCardData =
@@ -23,7 +23,10 @@ export function TrendingCard({ data }: { data: TrendingCardData }) {
   if (data.tokens.length === 0) {
     return (
       <CardShell icon={<TrendingUp className="h-4 w-4" />} title="Trending">
-        <div className="px-4 py-4 text-xs text-muted-fg">Nothing trending right now.</div>
+        <CardEmpty
+          title="Nothing trending right now"
+          hint="Market data may be quiet or temporarily unavailable — ask again in a moment."
+        />
       </CardShell>
     )
   }

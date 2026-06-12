@@ -81,6 +81,8 @@ export function ChainLogo({
       src={src}
       alt=""
       style={dim}
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className={cn('shrink-0 rounded-full bg-muted-bg object-contain', className)}
     />

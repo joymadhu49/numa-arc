@@ -66,7 +66,7 @@ export function PortfolioLoader(): ReactElement {
 function PortfolioSkeleton() {
   return (
     <div
-      className="overflow-hidden rounded-xl border border-border-c bg-card"
+      className="min-h-[280px] overflow-hidden rounded-xl border border-border-c bg-card"
       aria-busy="true"
       aria-label="Loading portfolio"
     >

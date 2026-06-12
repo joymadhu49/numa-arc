@@ -1,7 +1,7 @@
 'use client'
 
 import { Sprout } from 'lucide-react'
-import { CardShell, fmtUsd, fmtPct, CardError } from './_shared'
+import { CardShell, fmtUsd, fmtPct, CardError, CardEmpty } from './_shared'
 
 /** Matches SHARED contract: get_yield -> YieldCardData. */
 export type YieldCardData =
@@ -23,7 +23,10 @@ export function YieldCard({ data }: { data: YieldCardData }) {
   if (data.pools.length === 0) {
     return (
       <CardShell icon={<Sprout className="h-4 w-4" />} title="Yield">
-        <div className="px-4 py-4 text-xs text-muted-fg">No matching pools.</div>
+        <CardEmpty
+          title="No matching pools"
+          hint="Try widening the search — e.g. “best USDC yields” without a chain or APY filter."
+        />
       </CardShell>
     )
   }
