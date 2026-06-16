@@ -116,6 +116,36 @@ function humanizeKitName(name: string | undefined, fallback: string): string {
 function classifyKitError(kit: KitErrLike, detail: string): ClassifiedError | null {
   const retryable = kit.recoverability === 'RETRYABLE' || kit.recoverability === 'RESUMABLE'
   const retryHint = retryable ? ' This usually clears on retry.' : ''
+  const name = (kit.name ?? '').toUpperCase()
+
+  // Name-based specifics — clearer than the broad `type` bucket. The Circle
+  // swap service returns these as type INPUT, but "rejected as malformed" is
+  // the wrong story for a missing route or a slippage trip.
+  if (name.includes('UNSUPPORTED_ROUTE') || name.includes('ROUTE_NOT') || name.includes('NO_ROUTE')) {
+    return {
+      kind: 'upstream',
+      headline: 'No swap route available',
+      hint: 'The router has no path for this pair and amount right now (common on Arc testnet — routing is intermittent). Try again shortly, or a different amount/pair.',
+      detail,
+    }
+  }
+  if (name.includes('SLIPPAGE') || name.includes('STOP_LIMIT') || name.includes('INSUFFICIENT_OUTPUT')) {
+    return {
+      kind: 'contract_revert',
+      headline: 'Swap exceeded slippage',
+      hint: 'The price moved past your slippage tolerance before the swap landed. Retry, or raise slippage slightly for volatile testnet pricing.',
+      detail,
+    }
+  }
+  if (name.includes('INSUFFICIENT_SWAP_AMOUNT') || name.includes('INSUFFICIENT_AMOUNT')) {
+    return {
+      kind: 'validation',
+      headline: 'Swap amount too small',
+      hint: 'After fees the amount is below the minimum the router accepts. Increase the swap amount.',
+      detail,
+    }
+  }
+
   switch (kit.type) {
     case 'BALANCE':
       return {
