@@ -70,6 +70,111 @@ const REJECT_PATTERNS = [
   /action_rejected/i,
 ]
 
+/**
+ * Circle App Kit / SwapKit throw `KitError` with structured fields:
+ *   type: 'INPUT' | 'BALANCE' | 'ONCHAIN' | 'RPC' | 'NETWORK' | 'RATE_LIMIT' | 'SERVICE' | 'UNKNOWN'
+ *   recoverability: 'RETRYABLE' | 'RESUMABLE' | 'FATAL'
+ *   name: human-readable id (e.g. "NETWORK_MISMATCH"), code: number
+ * These are far more reliable than string matching, so we read them first and
+ * only fall back to message heuristics when the shape isn't a KitError. This is
+ * what turns an opaque "Something went wrong" into an actionable, honest error.
+ */
+const KIT_ERROR_TYPES = new Set([
+  'INPUT',
+  'BALANCE',
+  'ONCHAIN',
+  'RPC',
+  'NETWORK',
+  'RATE_LIMIT',
+  'SERVICE',
+  'UNKNOWN',
+])
+
+interface KitErrLike {
+  type?: string
+  recoverability?: string
+  name?: string
+  code?: number
+}
+
+function asKitError(err: unknown): KitErrLike | null {
+  if (!err || typeof err !== 'object') return null
+  const e = err as KitErrLike
+  if (typeof e.type === 'string' && KIT_ERROR_TYPES.has(e.type) && typeof e.recoverability === 'string') {
+    return e
+  }
+  return null
+}
+
+/** Turn an UPPER_SNAKE KitError name into a readable headline. */
+function humanizeKitName(name: string | undefined, fallback: string): string {
+  if (!name) return fallback
+  const words = name.toLowerCase().replace(/_/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : fallback
+}
+
+function classifyKitError(kit: KitErrLike, detail: string): ClassifiedError | null {
+  const retryable = kit.recoverability === 'RETRYABLE' || kit.recoverability === 'RESUMABLE'
+  const retryHint = retryable ? ' This usually clears on retry.' : ''
+  switch (kit.type) {
+    case 'BALANCE':
+      return {
+        kind: 'insufficient_funds',
+        headline: 'Not enough balance',
+        hint: 'Top up the source wallet with the required token or USDC gas on Arc.',
+        detail,
+      }
+    case 'ONCHAIN':
+      return {
+        kind: 'contract_revert',
+        headline: humanizeKitName(kit.name, 'On-chain transaction reverted'),
+        hint: `The swap transaction reverted on-chain — commonly a slippage/min-output trip or a missing approval.${retryHint}`,
+        detail,
+      }
+    case 'RPC':
+    case 'NETWORK':
+      return {
+        kind: 'network',
+        headline: 'Network error reaching Arc',
+        hint: `The RPC or App Kit service was unreachable.${retryHint || ' Check your connection and retry.'}`,
+        detail,
+      }
+    case 'RATE_LIMIT':
+      return {
+        kind: 'rate_limit',
+        headline: 'Upstream rate limit hit',
+        hint: 'The swap routing service is throttling us. Try again in a few seconds.',
+        detail,
+      }
+    case 'SERVICE':
+      return {
+        kind: 'upstream',
+        headline: humanizeKitName(kit.name, 'Swap service error'),
+        hint: `Circle's swap service returned an error, not your wallet or the chain.${retryHint || ' Try again shortly.'}`,
+        detail,
+      }
+    case 'INPUT':
+      return {
+        kind: 'validation',
+        headline: humanizeKitName(kit.name, 'Invalid swap parameters'),
+        hint: 'The swap request was rejected as malformed. Check the tokens, amount, and chain.',
+        detail,
+      }
+    case 'UNKNOWN':
+    default:
+      // A KitError we can't categorize — still better than a bare "unknown":
+      // surface its name + recoverability so the failure is diagnosable.
+      return {
+        kind: retryable ? 'timeout' : 'upstream',
+        headline: humanizeKitName(kit.name, 'Swap failed'),
+        hint: retryable
+          ? 'The swap could not start but may succeed on retry.'
+          : 'The swap service reported an unrecoverable error. Verify the amount and pair.',
+        detail,
+      }
+  }
+}
+
 export function classifyError(err: unknown): ClassifiedError {
   const msg = pickMessage(err)
   const code = extractCode(err)
@@ -83,6 +188,14 @@ export function classifyError(err: unknown): ClassifiedError {
       hint: 'You declined the signing request. Click again and approve to continue.',
       detail,
     }
+  }
+
+  // Structured Circle KitError (swap/bridge/send) — trust its own taxonomy
+  // before falling back to fragile string matching on the message.
+  const kit = asKitError(err) ?? asKitError((err as { cause?: unknown })?.cause)
+  if (kit) {
+    const classified = classifyKitError(kit, detail)
+    if (classified) return classified
   }
 
   if (/insufficient (funds|balance)/i.test(lower) || /not enough.*(balance|funds)/i.test(lower)) {
@@ -99,6 +212,24 @@ export function classifyError(err: unknown): ClassifiedError {
       kind: 'gas_estimation',
       headline: 'Gas estimation failed',
       hint: 'The transaction would revert. Check token allowances, amounts, and that the target contract is correct.',
+      detail,
+    }
+  }
+
+  if (/slippage|stop.?limit|min(imum)?.?output|price impact|insufficient output/i.test(lower)) {
+    return {
+      kind: 'contract_revert',
+      headline: 'Swap exceeded slippage',
+      hint: 'The price moved past your slippage tolerance before the swap landed. Retry — or raise slippage slightly for volatile testnet pricing.',
+      detail,
+    }
+  }
+
+  if (/no route|route not (found|supported|available)|no.*liquidity|unsupported pair|pool not found/i.test(lower)) {
+    return {
+      kind: 'upstream',
+      headline: 'No swap route available',
+      hint: 'The router could not find a path for this pair on this chain right now. Try a different pair or amount.',
       detail,
     }
   }

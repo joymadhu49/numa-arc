@@ -15,7 +15,14 @@ export interface TxStatusCardProps {
   hash?: string | null
   explorerUrl?: string | null
   explorerLabel?: string
+  /** Error headline (e.g. "Swap exceeded slippage"). */
   error?: string | null
+  /** Actionable next-step hint for the error. */
+  errorHint?: string | null
+  /** Raw technical detail (revert reason / SDK message), shown collapsed. */
+  errorDetail?: string | null
+  /** Error kind — drives the "retry usually succeeds" affordance. */
+  errorKind?: string | null
 }
 
 export function TxStatusCard({
@@ -26,6 +33,9 @@ export function TxStatusCard({
   explorerUrl,
   explorerLabel = 'View on explorer',
   error,
+  errorHint,
+  errorDetail,
+  errorKind,
 }: TxStatusCardProps) {
   const icon =
     status === 'success' ? (
@@ -66,7 +76,25 @@ export function TxStatusCard({
 
         {status === 'error' && error ? (
           <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
-            {error}
+            <div className="font-medium">{error}</div>
+            {errorHint ? (
+              <div className="mt-1 text-2xs leading-relaxed text-danger/80">{errorHint}</div>
+            ) : null}
+            {errorKind === 'rate_limit' || errorKind === 'timeout' || errorKind === 'network' ? (
+              <div className="mt-1 text-2xs uppercase tracking-wider text-danger/70">
+                Retry usually succeeds
+              </div>
+            ) : null}
+            {errorDetail && errorDetail !== error ? (
+              <details className="mt-1.5">
+                <summary className="cursor-pointer text-2xs uppercase tracking-wider text-danger/60 hover:text-danger">
+                  technical detail
+                </summary>
+                <pre className="mt-1 max-h-40 overflow-auto rounded bg-bg px-2 py-1.5 font-mono text-2xs leading-snug break-all whitespace-pre-wrap text-danger/90 numa-scroll">
+                  {errorDetail}
+                </pre>
+              </details>
+            ) : null}
           </div>
         ) : null}
 

@@ -79,8 +79,9 @@ interface AppKitTxApi {
     tokenIn: string
     tokenOut: string
     amountIn: string
-    slippageBps?: number
-    config?: { kitKey?: string }
+    // App Kit's SwapParams nests all of these under `config` — slippageBps at the
+    // top level is silently ignored, so our slippage clamp must live here.
+    config?: { slippageBps?: number; kitKey?: string; allowanceStrategy?: 'permit' | 'approve' }
   }) => Promise<{ txHash?: string; hash?: string; transactionHash?: string; explorerUrl?: string }>
   bridge: (params: {
     from: { adapter: unknown; chain: string }
@@ -387,7 +388,9 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const capErr = checkSpendCaps(amount, address)
           if (capErr) return capErr
           // GUARD: slippage clamp (App Kit computes its own minOut, so we
-          // enforce the cap on the REQUESTED value and surface it).
+          // enforce the cap on the REQUESTED value and surface it). This MUST go
+          // under `config` — a top-level slippageBps is ignored by the SDK and
+          // it silently falls back to its looser 300 bps default.
           const slippageBps = clampSlippage(input.slippageBps)
           // GUARD: chain resolved via registry (swap stays on its chain; Arc default).
           const chain = resolveChain(input.chain).appKit
@@ -396,8 +399,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             tokenIn,
             tokenOut,
             amountIn: amount,
-            slippageBps,
-            ...cfg,
+            config: { slippageBps, ...(KIT_KEY ? { kitKey: KIT_KEY } : {}) },
           })
           const hash = r.txHash ?? r.hash ?? r.transactionHash
           if (!hash) return failWith('Swap returned no transaction hash', 'upstream', 'The aggregator did not produce a tx. Retry.')

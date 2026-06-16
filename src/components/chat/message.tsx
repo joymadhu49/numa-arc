@@ -682,6 +682,8 @@ function ToolPart({
     }
 
     // Failed result from the confirm flow (ok:false) → error status card.
+    // Forward the executor's full classification (hint + raw detail + kind) so
+    // the failure is diagnosable instead of a dead-end "Something went wrong".
     if (state === 'output-available' && outFailed) {
       return (
         <TxStatusCard
@@ -689,6 +691,9 @@ function ToolPart({
           status="error"
           summary={subline}
           error={String(out?.error ?? 'Transaction failed')}
+          errorHint={typeof out?.errorHint === 'string' ? out.errorHint : undefined}
+          errorDetail={typeof out?.errorDetail === 'string' ? out.errorDetail : undefined}
+          errorKind={typeof out?.errorKind === 'string' ? out.errorKind : undefined}
         />
       )
     }
@@ -698,7 +703,8 @@ function ToolPart({
           action={actionLabel(name)}
           status="error"
           summary={subline}
-          error={part.errorText || 'Transaction failed'}
+          error="Transaction failed"
+          errorDetail={part.errorText || undefined}
         />
       )
     }
