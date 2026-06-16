@@ -9,12 +9,14 @@ import {
   http,
   numberToHex,
   isAddress,
+  parseUnits,
   type Address,
   type Chain,
   type Hex,
   type PublicClient,
   type WalletClient,
 } from 'viem'
+import { getToken, type TokenSymbol } from '@/lib/tokens'
 import { useConfig } from 'wagmi'
 import { arcTestnet } from '@/chains/arc'
 import {
@@ -393,12 +395,25 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           // it silently falls back to its looser 300 bps default.
           const slippageBps = clampSlippage(input.slippageBps)
           // GUARD: chain resolved via registry (swap stays on its chain; Arc default).
-          const chain = resolveChain(input.chain).appKit
+          const swapChain = resolveChain(input.chain)
+          const chain = swapChain.appKit
+          // App Kit's swap endpoint expects amountIn in BASE UNITS (unlike its
+          // estimate/bridge/send paths, which take human units — an SDK quirk).
+          // A human "1" sent verbatim is read as 1 base unit = dust and the swap
+          // reverts. Convert using the input token's decimals (Arc USDC/EURC = 6).
+          const decimals =
+            getToken(swapChain.entry.chainId, tokenIn.toUpperCase() as TokenSymbol)?.decimals ?? 6
+          let amountInBase: string
+          try {
+            amountInBase = parseUnits(amount.replace(/,/g, '').trim() as `${number}`, decimals).toString()
+          } catch {
+            return failWith('Invalid swap amount', 'validation', 'Enter a positive decimal amount, e.g. 1 or 0.5.')
+          }
           const r = await kit.swap({
             from: { adapter, chain },
             tokenIn,
             tokenOut,
-            amountIn: amount,
+            amountIn: amountInBase,
             config: { slippageBps, ...(KIT_KEY ? { kitKey: KIT_KEY } : {}) },
           })
           const hash = r.txHash ?? r.hash ?? r.transactionHash
