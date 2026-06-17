@@ -35,18 +35,27 @@ import { classifyError, type ErrorKind } from '@/lib/errors'
 const PER_TX_CAP = 100_000
 /** Rolling 24h cap per (date, address). */
 const DAILY_CAP = 250_000
-/** Max allowed slippage in basis points (5%). */
-const MAX_SLIPPAGE_BPS = 500
 /**
- * Default slippage when none / invalid supplied. 300 bps (3%) matches App Kit's
- * own swap default. The previous 50 bps (0.5%) was far too tight for Arc
- * testnet's thin, imbalanced AMM pools: App Kit derives minAmountOut from this
- * value, the realized output routinely landed just under a 0.5% floor, and the
- * swap adapter reverted with InsufficientAmountOut() — surfaced to the user as an
- * opaque "Onchain simulation failed". (Approval/permit is NOT the cause: Arc USDC
- * is a full FiatTokenV2.2 precompile with working EIP-2612, verified on-chain.)
+ * Slippage caps, by network.
+ *
+ * Arc TESTNET pools are thin and the Circle quote API's `estimatedOutput` runs
+ * materially ABOVE what the pool actually delivers at execution. Reproduced
+ * on-chain with the real SDK: a 1 USDC->EURC swap quotes ~1.217 EURC but the
+ * adapter's `execute` reverts with `InsufficientAmountOut()` (0xe52970aa) for
+ * any tolerance below ~6% — 500 bps reverts, 600 bps clears. So minAmountOut,
+ * which the SDK derives from this slippage, is unreachable at tight settings and
+ * the swap is impossible at the old 5% cap, regardless of the default. (NOT an
+ * approval/permit problem: Arc USDC is FiatTokenV2.2 with working EIP-2612, and
+ * the execute reverts identically with allowanceStrategy:'approve' + a live
+ * allowance — verified.) Testnet therefore needs a generous default + cap.
+ *
+ * Mainnet keeps tight, safe values — real liquidity makes the quote/execute gap
+ * negligible. Revisit the testnet branch once Arc mainnet pools are live.
  */
-const DEFAULT_SLIPPAGE_BPS = 300
+const SLIPPAGE_BPS = {
+  testnet: { default: 1000, max: 1500 },
+  mainnet: { default: 50, max: 300 },
+} as const
 
 /** Known burn / sink addresses we never allow `send` to target. */
 const BURN_ADDRESSES = new Set<string>([
@@ -237,11 +246,12 @@ function validateRecipient(
   return { ok: true, address: checksummed }
 }
 
-/** Clamp + validate slippage bps into [0, MAX_SLIPPAGE_BPS]. */
-function clampSlippage(raw: unknown): number {
+/** Clamp + validate slippage bps into [0, max], using per-network caps. */
+function clampSlippage(raw: unknown, isTestnet: boolean): number {
+  const caps = isTestnet ? SLIPPAGE_BPS.testnet : SLIPPAGE_BPS.mainnet
   const n = typeof raw === 'number' ? raw : Number(raw)
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SLIPPAGE_BPS
-  return Math.min(Math.floor(n), MAX_SLIPPAGE_BPS)
+  if (!Number.isFinite(n) || n <= 0) return caps.default
+  return Math.min(Math.floor(n), caps.max)
 }
 
 /** localStorage key for rolling daily spend, keyed by UTC date + address. */
@@ -395,13 +405,16 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           // GUARD: spend caps (per-tx + rolling daily).
           const capErr = checkSpendCaps(amount, address)
           if (capErr) return capErr
-          // GUARD: slippage clamp (App Kit computes its own minOut, so we
-          // enforce the cap on the REQUESTED value and surface it). This MUST go
-          // under `config` — a top-level slippageBps is ignored by the SDK and
-          // it silently falls back to its looser 300 bps default.
-          const slippageBps = clampSlippage(input.slippageBps)
           // GUARD: chain resolved via registry (swap stays on its chain; Arc default).
-          const chain = resolveChain(input.chain).appKit
+          const swapChain = resolveChain(input.chain)
+          const chain = swapChain.appKit
+          // GUARD: slippage clamp, per-network (App Kit computes its own minOut,
+          // so we enforce the cap on the REQUESTED value and surface it). This
+          // MUST go under `config` — a top-level slippageBps is ignored by the
+          // SDK. Testnet pools need a high tolerance (see SLIPPAGE_BPS): the Circle
+          // quote over-estimates output there, so a tight value reverts with
+          // InsufficientAmountOut().
+          const slippageBps = clampSlippage(input.slippageBps, swapChain.entry.testnet)
           // App Kit's swap/estimate wrappers take amountIn in HUMAN units and
           // convert to base internally (verified: estimateSwap('1') quotes 1
           // USDC -> ~1.217 EURC). Pre-converting to base here makes the SDK read
