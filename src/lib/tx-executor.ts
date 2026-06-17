@@ -37,8 +37,16 @@ const PER_TX_CAP = 100_000
 const DAILY_CAP = 250_000
 /** Max allowed slippage in basis points (5%). */
 const MAX_SLIPPAGE_BPS = 500
-/** Default slippage when none / invalid supplied. */
-const DEFAULT_SLIPPAGE_BPS = 50
+/**
+ * Default slippage when none / invalid supplied. 300 bps (3%) matches App Kit's
+ * own swap default. The previous 50 bps (0.5%) was far too tight for Arc
+ * testnet's thin, imbalanced AMM pools: App Kit derives minAmountOut from this
+ * value, the realized output routinely landed just under a 0.5% floor, and the
+ * swap adapter reverted with InsufficientAmountOut() — surfaced to the user as an
+ * opaque "Onchain simulation failed". (Approval/permit is NOT the cause: Arc USDC
+ * is a full FiatTokenV2.2 precompile with working EIP-2612, verified on-chain.)
+ */
+const DEFAULT_SLIPPAGE_BPS = 300
 
 /** Known burn / sink addresses we never allow `send` to target. */
 const BURN_ADDRESSES = new Set<string>([

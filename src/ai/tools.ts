@@ -624,7 +624,12 @@ const swapTool = tool({
     fromToken: z.string().describe('Symbol or address of token to sell.'),
     toToken: z.string().describe('Symbol or address of token to buy.'),
     amount: z.string().describe('Human-readable amount of fromToken.'),
-    slippageBps: z.number().optional().describe('Max slippage in bps. Default 50.'),
+    slippageBps: z
+      .number()
+      .optional()
+      .describe(
+        'Max slippage in bps. Default 300 (3%). Arc testnet pools are thin, so tighter values often revert with InsufficientAmountOut — only go lower if the user explicitly asks.',
+      ),
   }),
 })
 

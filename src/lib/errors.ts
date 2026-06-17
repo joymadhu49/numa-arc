@@ -158,7 +158,7 @@ function classifyKitError(kit: KitErrLike, detail: string): ClassifiedError | nu
       return {
         kind: 'contract_revert',
         headline: humanizeKitName(kit.name, 'On-chain transaction reverted'),
-        hint: `The swap transaction reverted on-chain — commonly a slippage/min-output trip or a missing approval.${retryHint}`,
+        hint: `The realized output fell below the minimum for your slippage tolerance (a min-output / InsufficientAmountOut trip — Arc testnet pools are thin and volatile). Retry, or raise slippage.${retryHint}`,
         detail,
       }
     case 'RPC':
