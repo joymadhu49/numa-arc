@@ -150,7 +150,15 @@ export async function POST(req: Request): Promise<Response> {
   const result = streamText({
     model: openrouter(modelId),
     system: SYSTEM_PROMPT,
-    messages: await convertToModelMessages(body.messages),
+    // `ignoreIncompleteToolCalls` strips any signing-tool call the user left
+    // unconfirmed (state `input-available`, no result) from the history sent to
+    // the model. Without it, an unconfirmed card (e.g. a pending swap) leaves a
+    // dangling `tool_use` with no `tool_result`; the very next message then makes
+    // the provider reject the conversation (400) and the turn dies with an opaque
+    // "Something went wrong". Dropping the incomplete call lets the new turn run.
+    messages: await convertToModelMessages(body.messages, {
+      ignoreIncompleteToolCalls: true,
+    }),
     // Read-tool execute() functions close over the connected wallet address.
     tools: buildNumaTools({ address: session.address }),
     stopWhen: stepCountIs(MAX_STEPS),
