@@ -628,7 +628,7 @@ const swapTool = tool({
       .number()
       .optional()
       .describe(
-        'Max slippage in bps. Default 300 (3%). Arc testnet pools are thin, so tighter values often revert with InsufficientAmountOut — only go lower if the user explicitly asks.',
+        'Max slippage in bps. Default 1000 (10%) on Arc testnet — its pools are thin and the quote over-estimates output, so tighter values revert with InsufficientAmountOut. Only set lower if the user explicitly asks.',
       ),
   }),
 })
