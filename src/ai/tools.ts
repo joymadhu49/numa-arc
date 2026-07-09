@@ -64,6 +64,9 @@ export interface BridgeStatusResult {
   dstDomain?: number
   txHash: string
   attestation?: string
+  /** Which environment answered — lets the UI map domains to the right
+   *  chain names (domains are shared between testnet and mainnet). */
+  testnet?: boolean
   error?: string
 }
 
@@ -100,7 +103,7 @@ async function fetchBridgeStatus(
   txHash: string,
   testnet = true,
 ): Promise<BridgeStatusResult> {
-  const base: BridgeStatusResult = { ok: false, status: 'unknown', srcDomain, txHash }
+  const base: BridgeStatusResult = { ok: false, status: 'unknown', srcDomain, txHash, testnet }
   try {
     const url = `${irisBaseFor(testnet)}/${srcDomain}?transactionHash=${txHash}`
     const res = await fetch(url, { headers: { accept: 'application/json' } })
@@ -123,6 +126,7 @@ async function fetchBridgeStatus(
       dstDomain: Number.isFinite(dstDomain) ? dstDomain : undefined,
       txHash,
       attestation,
+      testnet,
     }
   } catch (err) {
     return { ...base, error: err instanceof Error ? err.message : 'iris fetch failed' }

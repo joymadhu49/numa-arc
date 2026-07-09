@@ -621,9 +621,12 @@ function ToolPart({
     const status = String(out.status ?? 'unknown')
     const srcDomain = typeof out.srcDomain === 'number' ? out.srcDomain : undefined
     const dstDomain = typeof out.dstDomain === 'number' ? out.dstDomain : undefined
+    // Domains are shared between environments — resolve names against the
+    // environment that actually answered, or a mainnet bridge reads "Sepolia".
+    const env = { testnet: out.testnet !== false }
     const srcName =
-      (srcDomain != null ? getChainByDomain(srcDomain)?.name : undefined) ?? 'Source'
-    const dstName = (dstDomain != null ? getChainByDomain(dstDomain)?.name : undefined) ?? 'Arc'
+      (srcDomain != null ? getChainByDomain(srcDomain, env)?.name : undefined) ?? 'Source'
+    const dstName = (dstDomain != null ? getChainByDomain(dstDomain, env)?.name : undefined) ?? 'Arc'
     const stages = bridgeStagesFor(status)
     return (
       <BridgeCard
@@ -665,8 +668,8 @@ function ToolPart({
           <BridgeCard
             amount={o.amount ? String(o.amount) : undefined}
             token={String(o.token ?? 'USDC')}
-            source={{ name: String(o.fromChain ?? 'Source') }}
-            dest={{ name: String(o.toChain ?? 'Arc') }}
+            source={{ name: o.fromChain ? resolveChainRef(o.fromChain).name : 'Source' }}
+            dest={{ name: o.toChain ? resolveChainRef(o.toChain).name : 'Arc' }}
             burn="done"
             attest="active"
             mint="pending"
@@ -726,8 +729,8 @@ function ToolPart({
             <BridgeCard
               amount={o.amount ? String(o.amount) : undefined}
               token={String(o.token ?? 'USDC')}
-              source={{ name: String(o.fromChain ?? 'Source') }}
-              dest={{ name: String(o.toChain ?? 'Arc') }}
+              source={{ name: o.fromChain ? resolveChainRef(o.fromChain).name : 'Source' }}
+              dest={{ name: o.toChain ? resolveChainRef(o.toChain).name : 'Arc' }}
               burn="pending"
               attest="pending"
               mint="pending"
@@ -942,16 +945,35 @@ function MessageImpl({
 
   // Split tool parts: those that render a rich card vs. those that go into the
   // collapsible timeline. register_agent always renders its own card.
+  //
+  // Dedupe: when the model checks get_bridge_status right after a bridge
+  // broadcasts, the SAME burn would render two full BridgeCards in one
+  // message. Track the broadcast bridge hashes and demote matching status
+  // parts to the compact timeline.
+  const broadcastBridgeHashes = new Set<string>()
+  for (const p of toolParts) {
+    if ((getToolName(p) as string) !== 'bridge' || p.state !== 'output-available') continue
+    const o = asRecord(p.output)
+    if (o.ok === false) continue
+    if (typeof o.hash === 'string') broadcastBridgeHashes.add(o.hash.toLowerCase())
+  }
   const cardParts: NumaToolPart[] = []
   const chipParts: NumaToolPart[] = []
   for (const p of toolParts) {
     const n = getToolName(p) as string
     const out = p.state === 'output-available' ? asRecord(p.output) : null
     const failed = !!out && out.ok === false
+    const statusDuplicatesBridge =
+      n === 'get_bridge_status' &&
+      typeof out?.txHash === 'string' &&
+      broadcastBridgeHashes.has(out.txHash.toLowerCase())
     const rendersCard =
       n === 'register_agent' ||
       (CARD_TOOLS.has(n) && p.state === 'output-available' && !failed) ||
-      (n === 'get_bridge_status' && p.state === 'output-available' && !failed) ||
+      (n === 'get_bridge_status' &&
+        p.state === 'output-available' &&
+        !failed &&
+        !statusDuplicatesBridge) ||
       EXECUTABLE_TOOLS.has(n)
     if (rendersCard) cardParts.push(p)
     else chipParts.push(p)
