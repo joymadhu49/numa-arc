@@ -1,6 +1,7 @@
 import { Network, Palette, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { NetworkPrefsCard } from '@/components/settings/network-prefs-card'
 
 export default function SettingsPage() {
   return (
@@ -35,11 +36,10 @@ export default function SettingsPage() {
             <Network className="h-4 w-4 text-primary" />
             <CardTitle>Networks</CardTitle>
           </div>
-          <CardDescription>Numa is testnet-only for now.</CardDescription>
+          <CardDescription>Choose which networks Numa shows.</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-fg">
-          Routing defaults to Arc Testnet — switch the active chain from the header network picker.
-          Per-chain defaults and a preferred home network will land here.
+        <CardContent>
+          <NetworkPrefsCard />
         </CardContent>
       </Card>
 
@@ -52,8 +52,8 @@ export default function SettingsPage() {
           <CardDescription>Every transaction previews and simulates before you sign.</CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-fg">
-          Configurable thresholds — slippage caps, approval limits, and high-risk hold-to-confirm —
-          are coming soon.
+          Configurable thresholds are coming soon: slippage caps, approval limits, and
+          high-risk hold-to-confirm.
         </CardContent>
       </Card>
     </div>

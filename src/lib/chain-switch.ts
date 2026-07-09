@@ -49,14 +49,14 @@ function nativeCurrencyFor(entry: ChainEntry): { name: string; symbol: string; d
 }
 
 /**
- * Raw EIP-1193 chain switch with the EIP-3085 "add chain" fallback. If the
- * wallet doesn't have the network, this triggers the wallet's own "allow this
- * site to add a network?" permission prompt, then switches to it. Throws on a
- * real failure (including user rejection) so callers can surface feedback.
+ * EIP-1193 chain switch with the EIP-3085 "add chain" fallback, against an
+ * explicit provider (use the CONNECTOR's provider for the connected wallet —
+ * window.ethereum may be a different extension). If the wallet doesn't have
+ * the network, this triggers the wallet's own "allow this site to add a
+ * network?" permission prompt, then switches to it. Throws on a real failure
+ * (including user rejection) so callers can surface feedback.
  */
-export async function switchWalletChain(entry: ChainEntry): Promise<void> {
-  const eth = getEthereum()
-  if (!eth) throw new Error('No wallet detected')
+export async function switchChainOnProvider(eth: Eip1193, entry: ChainEntry): Promise<void> {
   const hexId = '0x' + entry.chainId.toString(16)
   try {
     await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexId }] })
@@ -80,4 +80,11 @@ export async function switchWalletChain(entry: ChainEntry): Promise<void> {
     })
     await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexId }] })
   }
+}
+
+/** switchChainOnProvider against the page's injected window.ethereum. */
+export async function switchWalletChain(entry: ChainEntry): Promise<void> {
+  const eth = getEthereum()
+  if (!eth) throw new Error('No wallet detected')
+  await switchChainOnProvider(eth, entry)
 }

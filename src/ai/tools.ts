@@ -27,16 +27,28 @@ import { getTrending } from '@/ai/tools/trending'
 import { getPortfolio } from '@/ai/tools/portfolio'
 import { getLpPositions } from '@/ai/tools/lp-positions'
 import { scanToken, simulateTx, type ScanTokenResult } from '@/lib/safety'
-import { getChain } from '@/chains/registry'
+import { irisBaseFor } from '@/lib/cctp-native'
+import { ACTIVE_CHAINS, MAINNET_ENABLED, getChain, toAppKitChain } from '@/chains/registry'
 
 const ARC_TESTNET_CHAIN_ID = 5042002
+
+/**
+ * Chains Circle App Kit can execute swap/send/bridge on right now (registry
+ * keys). Arc mainnet is excluded automatically: it has no App Kit enum yet.
+ */
+const EXECUTABLE_KEYS = ACTIVE_CHAINS.filter((c) => toAppKitChain(c))
+  .map((c) => c.key)
+  .join(', ')
+
+/** Appended to signing-tool descriptions when mainnet rows are enabled. */
+const MAINNET_NOTE = MAINNET_ENABLED
+  ? ` Mainnet chains are enabled. App Kit executable chains: ${EXECUTABLE_KEYS}. Arc MAINNET ("arc") IS bridgeable via the native CCTP path: the burn signs immediately, then once attested the user claims on the destination with claim_bridge. Swap and send on Arc mainnet are NOT available yet (no App Kit support); use "arc-testnet" for those.`
+  : ''
 
 // ---------------------------------------------------------------------------
 // CCTP V2 bridge read-tool helpers (TASK D).
 // ---------------------------------------------------------------------------
 
-/** Circle CCTP V2 attestation API (testnet sandbox). */
-const IRIS_SANDBOX_BASE = 'https://iris-api-sandbox.circle.com/v2/messages'
 
 export type BridgeStatus =
   | 'pending_burn'
@@ -86,10 +98,11 @@ interface IrisResponse {
 async function fetchBridgeStatus(
   srcDomain: number,
   txHash: string,
+  testnet = true,
 ): Promise<BridgeStatusResult> {
   const base: BridgeStatusResult = { ok: false, status: 'unknown', srcDomain, txHash }
   try {
-    const url = `${IRIS_SANDBOX_BASE}/${srcDomain}?transactionHash=${txHash}`
+    const url = `${irisBaseFor(testnet)}/${srcDomain}?transactionHash=${txHash}`
     const res = await fetch(url, { headers: { accept: 'application/json' } })
     if (res.status === 404) {
       // Burn not yet indexed by Circle → still in the burn/indexing phase.
@@ -114,6 +127,26 @@ async function fetchBridgeStatus(
   } catch (err) {
     return { ...base, error: err instanceof Error ? err.message : 'iris fetch failed' }
   }
+}
+
+/**
+ * Status lookup with environment disambiguation. CCTP domains are SHARED
+ * between testnet and mainnet (Arc is 26 on both), so when the caller could
+ * not name the chain we probe the sandbox first and, with mainnet enabled,
+ * fall through to the mainnet Iris if the sandbox has no record of the burn.
+ */
+async function fetchBridgeStatusAuto(
+  domain: number,
+  txHash: string,
+  resolved: { testnet: boolean } | undefined,
+): Promise<BridgeStatusResult> {
+  if (resolved) return fetchBridgeStatus(domain, txHash, resolved.testnet)
+  const sandbox = await fetchBridgeStatus(domain, txHash, true)
+  if (MAINNET_ENABLED && sandbox.status === 'pending_burn') {
+    const main = await fetchBridgeStatus(domain, txHash, false)
+    if (main.ok && main.status !== 'pending_burn') return main
+  }
+  return sandbox
 }
 
 export interface RouteLeg {
@@ -393,7 +426,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
 
   const estimateRouteTool = tool({
     description:
-      'Estimate a USDC bridge route between two chains: Fast vs Standard CCTP V2 transfer (availability, ETA, fee). ALWAYS call this BEFORE proposing a bridge so the user sees the route + timing. Pass registry chain keys (e.g. "arc-testnet", "base-sepolia").',
+      'Estimate a USDC bridge route between two chains: Fast vs Standard CCTP V2 transfer (availability, ETA, fee). ALWAYS call this BEFORE proposing a bridge so the user sees the route + timing. Pass registry chain keys (e.g. "arc-testnet", "base-sepolia"; mainnet keys like "ethereum", "base" when enabled). Any pair of supported chains works.',
     inputSchema: z.object({
       fromChain: z.string().describe('Source chain key (e.g. base-sepolia).'),
       toChain: z.string().describe('Destination chain key (e.g. arc-testnet).'),
@@ -404,7 +437,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
 
   const getBridgeStatusTool = tool({
     description:
-      'Check the status of an in-flight CCTP V2 bridge using the source chain + burn tx hash. Call this AFTER a bridge is broadcast to track Burn → Attestation → Mint. Accepts either a source chain key/id OR a CCTP source domain.',
+      'Check the status of an in-flight CCTP V2 bridge using the source chain + burn tx hash. Call this AFTER a bridge is broadcast to track Burn → Attestation → Mint. Prefer passing fromChain (chain key) so the correct attestation service (testnet vs mainnet) is used; srcDomain alone assumes testnet.',
     inputSchema: z.object({
       txHash: z.string().describe('The burn transaction hash (0x…).'),
       fromChain: z.string().optional().describe('Source chain key or chainId (e.g. base-sepolia).'),
@@ -412,10 +445,14 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
     }),
     execute: async ({ txHash, fromChain, srcDomain }) => {
       let domain = srcDomain
-      if (domain == null && fromChain) {
+      let resolved: { testnet: boolean } | undefined
+      if (fromChain) {
         const asNum = Number(fromChain)
         const entry = Number.isFinite(asNum) ? getChain(asNum) : getChain(fromChain)
-        domain = entry?.cctpDomain
+        if (entry) {
+          domain = domain ?? entry.cctpDomain
+          resolved = { testnet: entry.testnet }
+        }
       }
       if (domain == null) {
         return {
@@ -426,7 +463,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
           error: 'Could not resolve a CCTP source domain. Provide fromChain or srcDomain.',
         }
       }
-      return fetchBridgeStatus(domain, txHash)
+      return fetchBridgeStatusAuto(domain, txHash, resolved)
     },
   })
 
@@ -443,6 +480,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
     swap: swapTool,
     send: sendTool,
     bridge: bridgeTool,
+    claim_bridge: claimBridgeTool,
     deposit: depositTool,
     withdraw: withdrawTool,
     add_liquidity: addLiquidityTool,
@@ -576,7 +614,7 @@ const scanTxTool = tool({
 
 const estimateRouteTool = tool({
   description:
-    'Estimate a USDC bridge route between two chains: Fast vs Standard CCTP V2 transfer (availability, ETA, fee). ALWAYS call this BEFORE proposing a bridge so the user sees the route + timing. Pass registry chain keys (e.g. "arc-testnet", "base-sepolia").',
+    'Estimate a USDC bridge route between two chains: Fast vs Standard CCTP V2 transfer (availability, ETA, fee). ALWAYS call this BEFORE proposing a bridge so the user sees the route + timing. Pass registry chain keys (e.g. "arc-testnet", "base-sepolia"; mainnet keys like "ethereum", "base" when enabled). Any pair of supported chains works.',
   inputSchema: z.object({
     fromChain: z.string().describe('Source chain key (e.g. base-sepolia).'),
     toChain: z.string().describe('Destination chain key (e.g. arc-testnet).'),
@@ -587,7 +625,7 @@ const estimateRouteTool = tool({
 
 const getBridgeStatusTool = tool({
   description:
-    'Check the status of an in-flight CCTP V2 bridge using the source chain + burn tx hash. Call this AFTER a bridge is broadcast to track Burn → Attestation → Mint. Accepts either a source chain key/id OR a CCTP source domain.',
+    'Check the status of an in-flight CCTP V2 bridge using the source chain + burn tx hash. Call this AFTER a bridge is broadcast to track Burn → Attestation → Mint. Prefer passing fromChain (chain key) so the correct attestation service (testnet vs mainnet) is used; srcDomain alone assumes testnet.',
   inputSchema: z.object({
     txHash: z.string().describe('The burn transaction hash (0x…).'),
     fromChain: z.string().optional().describe('Source chain key or chainId (e.g. base-sepolia).'),
@@ -595,10 +633,14 @@ const getBridgeStatusTool = tool({
   }),
   execute: async ({ txHash, fromChain, srcDomain }) => {
     let domain = srcDomain
-    if (domain == null && fromChain) {
+    let resolved: { testnet: boolean } | undefined
+    if (fromChain) {
       const asNum = Number(fromChain)
       const entry = Number.isFinite(asNum) ? getChain(asNum) : getChain(fromChain)
-      domain = entry?.cctpDomain
+      if (entry) {
+        domain = domain ?? entry.cctpDomain
+        resolved = { testnet: entry.testnet }
+      }
     }
     if (domain == null) {
       return {
@@ -609,7 +651,7 @@ const getBridgeStatusTool = tool({
         error: 'Could not resolve a CCTP source domain. Provide fromChain or srcDomain.',
       }
     }
-    return fetchBridgeStatus(domain, txHash)
+    return fetchBridgeStatusAuto(domain, txHash, resolved)
   },
 })
 
@@ -619,40 +661,64 @@ const getBridgeStatusTool = tool({
 
 const swapTool = tool({
   description:
-    'Swap one token for another on Arc Testnet via Circle App Kit. Gas paid in USDC. Both tokens must be on Arc Testnet (chainId 5042002).',
+    'Swap one token for another via Circle App Kit. Both tokens must be on the same chain. On Arc, gas is paid in USDC.' +
+    MAINNET_NOTE,
   inputSchema: z.object({
     fromToken: z.string().describe('Symbol or address of token to sell.'),
     toToken: z.string().describe('Symbol or address of token to buy.'),
     amount: z.string().describe('Human-readable amount of fromToken.'),
+    chain: z
+      .string()
+      .optional()
+      .describe('Chain enum or registry key (e.g. Arc_Testnet, Base_Sepolia, "base"). Default Arc_Testnet.'),
     slippageBps: z
       .number()
       .optional()
       .describe(
-        'Max slippage in bps. Default 1000 (10%) on Arc testnet — its pools are thin and the quote over-estimates output, so tighter values revert with InsufficientAmountOut. Only set lower if the user explicitly asks.',
+        'Max slippage in bps. Default 1000 (10%) on testnets: thin pools over-estimate output, so tighter values revert with InsufficientAmountOut. Mainnet swaps are clamped to a 300 bps cap. Only set lower if the user explicitly asks.',
       ),
   }),
 })
 
 const sendTool = tool({
-  description: 'Send a token to an address on Arc Testnet. Confirm recipient with user first.',
+  description:
+    'Send a token to an address on a supported chain. Confirm recipient with user first.' +
+    MAINNET_NOTE,
   inputSchema: z.object({
     token: z.string().describe('Symbol or address. Defaults USDC.'),
     to: z.string().describe('Destination EVM address (0x…).'),
     amount: z.string().describe('Human-readable amount.'),
+    chain: z
+      .string()
+      .optional()
+      .describe('Chain enum or registry key (e.g. Arc_Testnet, "base"). Default Arc_Testnet.'),
   }),
 })
 
 const bridgeTool = tool({
   description:
-    'Bridge USDC across chains via Circle CCTP/Gateway through App Kit. Source or destination must be Arc Testnet.',
+    'Bridge USDC between any two supported CCTP chains via Circle App Kit. Any pair of supported chains works; Arc does NOT need to be one end.' +
+    MAINNET_NOTE,
   inputSchema: z.object({
     token: z.string().describe('Token symbol. Strongly prefer USDC.'),
     amount: z.string().describe('Human-readable amount.'),
     fromChain: z
       .string()
-      .describe('Source chain enum (e.g. Arc_Testnet, Ethereum_Sepolia, Base_Sepolia).'),
-    toChain: z.string().describe('Destination chain enum.'),
+      .describe(
+        'Source chain enum or registry key (e.g. Arc_Testnet, Ethereum_Sepolia; mainnet keys like "ethereum", "base" when enabled).',
+      ),
+    toChain: z.string().describe('Destination chain enum or registry key.'),
     recipient: z.string().optional().describe('Optional recipient. Defaults connected wallet.'),
+  }),
+})
+
+const claimBridgeTool = tool({
+  description:
+    'Claim (mint) USDC on the destination chain of a NATIVE CCTP bridge, i.e. a bridge where Arc mainnet was one end. Call ONLY after get_bridge_status reads ready_to_mint or complete for the burn tx. App Kit bridges mint automatically and never need this.',
+  inputSchema: z.object({
+    fromChain: z.string().describe('Chain the burn happened on (key or enum).'),
+    toChain: z.string().describe('Chain to mint on (key or enum).'),
+    txHash: z.string().describe('Burn transaction hash (0x…).'),
   }),
 })
 
@@ -753,6 +819,7 @@ export const SIGNING_TOOL_NAMES = [
   'swap',
   'send',
   'bridge',
+  'claim_bridge',
   'deposit',
   'withdraw',
   'add_liquidity',
@@ -785,6 +852,7 @@ export const numaTools = {
   swap: swapTool,
   send: sendTool,
   bridge: bridgeTool,
+  claim_bridge: claimBridgeTool,
   deposit: depositTool,
   withdraw: withdrawTool,
   add_liquidity: addLiquidityTool,

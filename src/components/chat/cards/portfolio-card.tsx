@@ -78,7 +78,7 @@ export function PortfolioCard({ data }: { data: PortfolioCardData }) {
         dustCount > 0 ? (
           <CardEmpty
             title="Only dust balances"
-            hint={`All ${dustCount} ${dustCount === 1 ? 'balance is' : 'balances are'} under $0.01 — bridge or receive more testnet USDC to see them here.`}
+            hint={`All ${dustCount} ${dustCount === 1 ? 'balance is' : 'balances are'} under $0.01. Bridge or receive more USDC to see them here.`}
           />
         ) : (
           <CardEmpty

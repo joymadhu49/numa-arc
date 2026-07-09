@@ -22,7 +22,7 @@ import { MintAgentCard } from './mint-agent-card'
 import { NumaAvatar } from './numa-avatar'
 import type { ErrorKind } from '@/lib/errors'
 import { isSigningTool, type NumaTools } from '@/ai/tools'
-import { getChainByDomain } from '@/chains/registry'
+import { getChainByDomain, resolveChainRef } from '@/chains/registry'
 import { cn } from '@/lib/utils'
 
 // Generative-UI cards.
@@ -243,6 +243,7 @@ function renderContent(content: string): ReactNode {
 const EXECUTABLE_TOOLS = new Set([
   'swap',
   'bridge',
+  'claim_bridge',
   'send',
   'deposit',
   'withdraw',
@@ -272,6 +273,8 @@ function summarizeInput(name: string, input: unknown): string {
       return `${o.amount ?? ''} ${o.token ?? ''} → ${o.to ?? ''}`
     case 'bridge':
       return `${o.amount ?? ''} ${o.token ?? ''} ${o.fromChain ?? ''} → ${o.toChain ?? ''}`
+    case 'claim_bridge':
+      return `mint on ${o.toChain ?? ''} (burn ${String(o.txHash ?? '').slice(0, 10)}…)`
     case 'deposit':
       return `${o.amount ?? ''} ${o.token ?? 'USDC'} into ${o.protocol ?? ''}`
     case 'withdraw':
@@ -281,9 +284,9 @@ function summarizeInput(name: string, input: unknown): string {
     case 'remove_liquidity':
       return `position #${o.positionId ?? ''} ${o.percent ?? 100}%`
     case 'register_agent':
-      return `${o.name ?? ''} — ${o.description ?? ''}`
+      return `${o.name ?? ''}: ${o.description ?? ''}`
     case 'hire_agent':
-      return `agent ${o.agentId ?? ''} — budget ${o.budgetUsdc ?? ''} USDC`
+      return `agent ${o.agentId ?? ''}, budget ${o.budgetUsdc ?? ''} USDC`
     case 'create_job':
       return `${o.description ?? ''} (budget ${o.budgetUsdc ?? ''} USDC)`
     case 'scan_token':
@@ -314,6 +317,7 @@ function actionLabel(name: string): string {
     swap: 'Swap',
     send: 'Send',
     bridge: 'Bridge',
+    claim_bridge: 'Claim Bridge',
     deposit: 'Deposit',
     withdraw: 'Withdraw',
     add_liquidity: 'Add Liquidity',
@@ -377,6 +381,8 @@ function buildSuccessSubline(
         arrow: '→',
         right: `${String(o.fromChain ?? '')} → ${String(o.toChain ?? 'Arc_Testnet')}`,
       }
+    case 'claim_bridge':
+      return { left: `claim USDC on ${String(o.toChain ?? '')}` }
     case 'send':
       return { left: `${amount} ${String(o.token ?? 'USDC')} to ${String(o.to ?? '').slice(0, 10)}…` }
     case 'deposit':
@@ -506,7 +512,7 @@ function ToolChip({
         <span className="font-medium text-fg">
           {pending && !awaitingConfirm ? `Calling ${actionLabel(name)}…` : actionLabel(name)}
         </span>
-        {summary ? <span className="break-all text-muted-fg">— {summary}</span> : null}
+        {summary ? <span className="break-all text-muted-fg">· {summary}</span> : null}
       </div>
 
       {errorHeadline ? (
@@ -737,6 +743,9 @@ function ToolPart({
         <SwapPreviewCard
           action={actionLabel(name)}
           summary={subline}
+          network={resolveChainRef(
+            name === 'claim_bridge' ? o.toChain : (o.chain ?? o.fromChain),
+          ).name}
           confirmSlot={
             <ConfirmButton
               waiting={isWaitingWallet}

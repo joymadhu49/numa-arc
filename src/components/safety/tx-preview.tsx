@@ -458,7 +458,7 @@ export function TxPreview({
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 This action runs as a single abstracted call, so Numa can’t simulate it ahead
-                of time. Check the amount and recipient above — your wallet shows the final
+                of time. Check the amount and recipient above. Your wallet shows the final
                 signing details before anything moves.
               </span>
             </div>

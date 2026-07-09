@@ -107,6 +107,8 @@ function describe(tool: string, o: Record<string, unknown>): string {
       return `Send ${str(o.amount)} ${str(o.token, 'USDC')} to ${str(o.to)}`
     case 'bridge':
       return `Bridge ${str(o.amount)} ${str(o.token, 'USDC')} from ${str(o.fromChain)} to ${str(o.toChain)}`
+    case 'claim_bridge':
+      return `Claim bridged USDC on ${str(o.toChain)}`
     case 'deposit':
       return `Deposit ${str(o.amount)} ${str(o.token, 'USDC')} into ${str(o.protocol)}`
     case 'withdraw':
@@ -130,7 +132,11 @@ export function useTxPreview(): (e: PreviewInput) => Promise<TxPreviewData> {
   return useCallback(async ({ tool, input, address }: PreviewInput): Promise<TxPreviewData> => {
     const o = rec(input)
     const from = (address ?? zeroAddress) as Address
-    const chainEntry = resolveChainRef(o.chain ?? o.fromChain)
+    // claim_bridge signs its mint on the DESTINATION chain — the review modal
+    // must name the network the wallet will actually be asked to sign on.
+    const chainEntry = resolveChainRef(
+      tool === 'claim_bridge' ? o.toChain : (o.chain ?? o.fromChain),
+    )
     const chainId = chainEntry.chainId
     const action = describe(tool, o)
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { Sparkles } from 'lucide-react'
+import { useTestnetPrefs } from '@/lib/network-prefs'
 
 interface ExampleChipsProps {
   onPick: (prompt: string) => void
@@ -30,6 +31,22 @@ const EXAMPLES: readonly string[] = [
   'Scan EURC: 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
 ]
 
+/**
+ * Mainnet-mode starters (testnets hidden). Arc is the hub: bridges INTO and
+ * OUT of Arc mainnet ride the native CCTP path (burn now, claim on the
+ * destination once attested). Swaps stay off Arc mainnet until Circle App Kit
+ * ships support; the scan address is Circle's official Ethereum-mainnet EURC.
+ */
+const MAINNET_EXAMPLES: readonly string[] = [
+  'Show my portfolio with total balance',
+  'Bridge 20 USDC from Base to Arc',
+  'Bridge 10 USDC from Arc to Ethereum',
+  'What are the best USDC yields right now?',
+  'Swap 1 USDC for EURC on Base',
+  'Check my token approvals for risky allowances',
+  'Scan EURC: 0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c',
+]
+
 export function ExampleChips({
   onPick,
   disabled = false,
@@ -37,7 +54,8 @@ export function ExampleChips({
   label = 'Start with',
   variant = 'list',
 }: ExampleChipsProps) {
-  const items = prompts ?? EXAMPLES
+  const { hideTestnets } = useTestnetPrefs()
+  const items = prompts ?? (hideTestnets ? MAINNET_EXAMPLES : EXAMPLES)
 
   if (variant === 'pills') {
     return (

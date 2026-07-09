@@ -264,7 +264,33 @@ const RAW_CHAINS: readonly ChainEntry[] = [
     isArc: false,
   },
 
-  // ===== MAINNET (defined, NOT active in wagmi yet) =========================
+  // ===== MAINNET (activated via NEXT_PUBLIC_ENABLE_MAINNET=true) ============
+  {
+    // Arc mainnet — verified live 2026-07-09: chainId 5042 via eth_chainId on
+    // the public RPC; USDC precompile (same 0x3600… address as testnet,
+    // 6-decimal ERC-20 surface) verified on-chain; CCTP V2 TokenMessenger /
+    // MessageTransmitter deployed at the standard mainnet addresses with
+    // localDomain() == 26. EURC intentionally omitted until Circle's docs
+    // publish the official Arc-mainnet address (the explorer shows unverified
+    // claimants — do not trust them).
+    key: 'arc',
+    name: 'Arc',
+    chainId: 5042,
+    cctpDomain: 26,
+    cctpVersion: 'v2',
+    usdc: '0x3600000000000000000000000000000000000000' as Address,
+    eurc: undefined,
+    tokenMessenger: MAINNET_TOKEN_MESSENGER,
+    messageTransmitter: MAINNET_MESSAGE_TRANSMITTER,
+    rpcUrl: 'https://rpc.blockdaemon.mainnet.arc.io',
+    explorerUrl: 'https://arc-mainnet.cloud.blockscout.com',
+    logo: DEFAULT_LOGO,
+    fastTransfer: false,
+    gatewaySupported: false,
+    paymasterSupported: false,
+    testnet: false,
+    isArc: true,
+  },
   {
     key: 'ethereum',
     name: 'Ethereum',
@@ -430,11 +456,23 @@ export const CHAINS: readonly ChainEntry[] = RAW_CHAINS.map((c) => ({
 }))
 
 // ---------------------------------------------------------------------------
-// Active set: currently-enabled chains (testnet-only for now).
+// Active set: testnets always; mainnets join when the env flag is set.
 // ---------------------------------------------------------------------------
 
-/** Currently-enabled chains (testnet-only now; mainnet-ready). */
-export const ACTIVE_CHAINS: readonly ChainEntry[] = CHAINS.filter((c) => c.testnet)
+/**
+ * Mainnet activation gate. Default OFF — set NEXT_PUBLIC_ENABLE_MAINNET=true
+ * to add the mainnet rows (Arc mainnet, Ethereum, Base, …) to the active set.
+ * NEXT_PUBLIC_ so the same flag drives both server tools and client UI.
+ */
+export const MAINNET_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MAINNET === 'true'
+
+/**
+ * Currently-enabled chains. Testnet rows stay first so Arc Testnet remains the
+ * default chain (resolveChainRef's fallback) even with mainnet enabled.
+ */
+export const ACTIVE_CHAINS: readonly ChainEntry[] = CHAINS.filter(
+  (c) => c.testnet || MAINNET_ENABLED,
+)
 
 // ---------------------------------------------------------------------------
 // Lookup helpers.
@@ -543,7 +581,15 @@ export function toViemChain(entry: ChainEntry): Chain {
 // Avalanche_Fuji, Unichain_Sepolia, Linea_Sepolia).
 // ---------------------------------------------------------------------------
 
-/** registry key → App Kit chain enum string. */
+/**
+ * registry key → App Kit chain enum string.
+ *
+ * Mainnet enums verified against @circle-fin/app-kit 1.9.0 chains.d.ts.
+ * NOTE: App Kit (≤1.9.0, 2026-07-06) has NO Arc-mainnet enum — only
+ * Arc_Testnet. The 'arc' (mainnet) key is intentionally unmapped so
+ * toAppKitChain returns undefined and callers fail loudly instead of
+ * silently targeting the testnet. Add the mapping when Circle ships it.
+ */
 const APPKIT_CHAIN_BY_KEY: Record<string, string> = {
   'arc-testnet': 'Arc_Testnet',
   'ethereum-sepolia': 'Ethereum_Sepolia',
@@ -554,6 +600,15 @@ const APPKIT_CHAIN_BY_KEY: Record<string, string> = {
   'avalanche-fuji': 'Avalanche_Fuji',
   'unichain-sepolia': 'Unichain_Sepolia',
   'linea-sepolia': 'Linea_Sepolia',
+  // Mainnet rows (active only when MAINNET_ENABLED).
+  ethereum: 'Ethereum',
+  base: 'Base',
+  arbitrum: 'Arbitrum',
+  optimism: 'Optimism',
+  polygon: 'Polygon',
+  avalanche: 'Avalanche',
+  unichain: 'Unichain',
+  linea: 'Linea',
 }
 
 /**
@@ -571,6 +626,48 @@ export function toAppKitChain(entry: ChainEntry): string | undefined {
  * blindly — only returns entries that exist in the registry. Falls back to the
  * ACTIVE Arc entry when nothing matches.
  */
+/**
+ * Strict variant of resolveChainRef for EXECUTION paths: returns undefined
+ * instead of silently falling back to Arc Testnet when the ref doesn't match,
+ * and only resolves chains in the ACTIVE set (so mainnet rows are not
+ * executable while the flag is off). Accepts common aliases like
+ * "arc-mainnet" / "Arc_Mainnet" for the "arc" key.
+ */
+export function resolveActiveChainStrict(ref: unknown): ChainEntry | undefined {
+  if (ref == null) return ACTIVE_CHAINS.find((c) => c.isArc)
+  let candidate: ChainEntry | undefined
+  if (typeof ref === 'number') {
+    candidate = getChain(ref)
+  } else if (typeof ref === 'string') {
+    const raw = ref.trim()
+    candidate = getChain(raw)
+    if (!candidate) {
+      // App Kit enum string.
+      for (const [key, appkit] of Object.entries(APPKIT_CHAIN_BY_KEY)) {
+        if (appkit === raw) {
+          candidate = getChain(key)
+          break
+        }
+      }
+    }
+    if (!candidate) {
+      // Normalized aliases: "Arc_Mainnet" / "arc mainnet" → "arc", etc.
+      const norm = raw.toLowerCase().replace(/[\s_]+/g, '-')
+      candidate = getChain(norm) ?? (norm === 'arc-mainnet' ? getChain('arc') : undefined)
+    }
+    if (!candidate) {
+      const asNum = Number(raw)
+      if (Number.isFinite(asNum) && raw !== '') candidate = getChain(asNum)
+    }
+  } else if (typeof ref === 'object') {
+    const o = ref as { chain?: string; key?: string; chainId?: number; id?: number }
+    return resolveActiveChainStrict(o.key ?? o.chain ?? o.chainId ?? o.id)
+  }
+  if (!candidate) return undefined
+  // Execution is limited to the ACTIVE set — mainnet rows only when enabled.
+  return ACTIVE_CHAINS.some((c) => c.chainId === candidate.chainId) ? candidate : undefined
+}
+
 export function resolveChainRef(ref: unknown): ChainEntry {
   const arc = ACTIVE_CHAINS.find((c) => c.isArc) ?? CHAINS[0]!
   if (ref == null) return arc

@@ -133,10 +133,12 @@ export async function POST(req: Request): Promise<NextResponse> {
         const args = body.args as unknown as AddLiquidityArgs
         return NextResponse.json(await addLiquidity({ ...args, recipient: sessionAddress }))
       }
-      case 'remove_liquidity':
+      case 'remove_liquidity': {
+        const args = body.args as unknown as RemoveLiquidityArgs
         return NextResponse.json(
-          await removeLiquidity(body.args as unknown as RemoveLiquidityArgs),
+          await removeLiquidity({ ...args, recipient: sessionAddress }),
         )
+      }
       case 'get_lp_positions': {
         return NextResponse.json(await getLpPositions({ address: sessionAddress }))
       }

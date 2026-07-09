@@ -185,7 +185,7 @@ export function MintAgentCard({ onMinted }: MintAgentCardProps) {
           <div>
             <h3 className="break-words text-lg font-bold tracking-tight text-fg sm:text-xl">{agent.name}</h3>
             <p className="mt-1 text-xs text-muted-fg">
-              Numa Agent — on-chain attestation on Arc Testnet. Unlimited supply. Each
+              Numa Agent: on-chain attestation on Arc Testnet. Unlimited supply. Each
               character is unique and bound to your wallet via a soulbound mint tx.
             </p>
           </div>

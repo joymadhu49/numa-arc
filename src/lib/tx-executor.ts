@@ -19,12 +19,38 @@ import { useConfig } from 'wagmi'
 import { arcTestnet } from '@/chains/arc'
 import {
   ACTIVE_CHAINS,
+  getChainByDomain,
+  resolveActiveChainStrict,
   resolveChainRef,
   toAppKitChain,
   toViemChain,
   type ChainEntry,
 } from '@/chains/registry'
 import { classifyError, type ErrorKind } from '@/lib/errors'
+import { switchChainOnProvider } from '@/lib/chain-switch'
+import {
+  buildApproveCalldata,
+  buildDepositForBurnCalldata,
+  buildReceiveMessageCalldata,
+  erc20ApproveAbi,
+  fetchIrisMessage,
+  fetchStandardMaxFee,
+} from '@/lib/cctp-native'
+
+/**
+ * Resolve a model-supplied chain ref STRICTLY for execution: unknown refs and
+ * chains outside the ACTIVE set (e.g. mainnet rows while the flag is off) fail
+ * validation instead of silently falling back to Arc Testnet.
+ */
+function requireActiveChain(ref: unknown, label: string): ChainEntry | TxExecResult {
+  const entry = resolveActiveChainStrict(ref)
+  if (entry) return entry
+  return failWith(
+    `Unknown or disabled ${label} "${String(ref)}"`,
+    'validation',
+    'Use an enabled chain key like "arc-testnet" or "base-sepolia" (or "arc", "base" when mainnet is enabled).',
+  )
+}
 
 // ---------------------------------------------------------------------------
 // SAFETY GUARD CONSTANTS (TASK A). Generous testnet defaults; tune here.
@@ -157,6 +183,17 @@ function loadAppKit(): Promise<AppKitRuntime> {
       'avalanche-fuji': chains.AvalancheFuji,
       'unichain-sepolia': chains.UnichainSepolia,
       'linea-sepolia': chains.LineaSepolia,
+      // Mainnet objects — only reach supportedChains when the registry's
+      // ACTIVE set includes them (NEXT_PUBLIC_ENABLE_MAINNET). Arc mainnet has
+      // no App Kit object; it routes via the native CCTP path instead.
+      ethereum: chains.Ethereum,
+      base: chains.Base,
+      arbitrum: chains.Arbitrum,
+      optimism: chains.Optimism,
+      polygon: chains.Polygon,
+      avalanche: chains.Avalanche,
+      unichain: chains.Unichain,
+      linea: chains.Linea,
     }
     return {
       ViemAdapter: adapterMod.ViemAdapter,
@@ -171,18 +208,173 @@ interface ChainInfo {
   entry: ChainEntry
   viem: Chain
   wagmiId: number
-  appKit: string
+  /** App Kit chain enum — undefined when Circle's SDK has no enum for this
+   *  chain yet (e.g. Arc mainnet). Callers MUST fail loudly, never fall back
+   *  to a different network. */
+  appKit: string | undefined
 }
 
 /** Resolve a registry-backed ChainInfo from any loose chain reference. */
 function resolveChain(rawChain: unknown): ChainInfo {
   const entry = resolveChainRef(rawChain)
-  const viem = entry.isArc ? arcTestnet : toViemChain(entry)
+  // Match on chainId, not isArc — Arc MAINNET must not resolve to the testnet
+  // viem chain.
+  const viem = entry.chainId === arcTestnet.id ? arcTestnet : toViemChain(entry)
   return {
     entry,
     viem,
     wagmiId: entry.chainId,
-    appKit: toAppKitChain(entry) ?? 'Arc_Testnet',
+    appKit: toAppKitChain(entry),
+  }
+}
+
+/** Uniform failure for chains Circle App Kit cannot target yet. */
+function appKitUnsupported(chainName: string): TxExecResult {
+  return failWith(
+    `${chainName} is not supported by Circle App Kit yet`,
+    'validation',
+    `Circle's App Kit SDK has no ${chainName} route yet. This action will be enabled as soon as Circle ships support.`,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Native CCTP V2 path — used for bridges App Kit cannot execute (Arc mainnet).
+// ---------------------------------------------------------------------------
+
+type WagmiConfig = ReturnType<typeof useConfig>
+
+/**
+ * Get a viem WalletClient on `entry`'s chain from the connected wagmi
+ * connector, switching the wallet's network first (best-effort; the send
+ * itself pins the chain, so a refused switch surfaces as a wallet error).
+ */
+async function walletOn(
+  config: WagmiConfig,
+  address: Address | undefined,
+  entry: ChainEntry,
+): Promise<{ walletClient: WalletClient; account: Address; viem: Chain } | TxExecResult> {
+  const connection =
+    config.state.connections.get(config.state.current ?? '') ??
+    Array.from(config.state.connections.values())[0]
+  const connector = connection?.connector ?? config.connectors[0]
+  if (!connector) {
+    return failWith('No wallet connector', 'wallet_not_connected', 'Connect a wallet first.')
+  }
+  const provider = (await connector.getProvider()) as {
+    request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
+  }
+  try {
+    // Switch with the EIP-3085 add-chain fallback: chains like Arc mainnet
+    // are usually not preconfigured in wallets, and without the add the
+    // pinned sendTransaction below dies on ChainMismatchError.
+    await switchChainOnProvider(provider, entry)
+  } catch {
+    // Already on chain or user rejected the switch/add. The sendTransaction
+    // below pins the chain and will surface a clear error if still wrong.
+  }
+  const account = (address ?? connection?.accounts[0]) as Address | undefined
+  if (!account) {
+    return failWith('No active wallet account', 'wallet_not_connected', 'Connect or unlock your wallet.')
+  }
+  const viem = entry.chainId === arcTestnet.id ? arcTestnet : toViemChain(entry)
+  const walletClient = createWalletClient({
+    account,
+    chain: viem,
+    transport: custom(provider as unknown as Parameters<typeof custom>[0]),
+  })
+  return { walletClient, account, viem }
+}
+
+/**
+ * Bridge USDC via raw CCTP V2 (approve if needed + depositForBurn on the
+ * source chain). The user later claims on the destination with claim_bridge
+ * once Circle's attestation completes. Only USDC is supported.
+ */
+async function executeNativeCctpBridge(params: {
+  config: WagmiConfig
+  address?: Address
+  fromEntry: ChainEntry
+  toEntry: ChainEntry
+  token: string
+  amount: string
+}): Promise<TxExecResult> {
+  const { config, address, fromEntry, toEntry, token, amount } = params
+  if (token.toUpperCase() !== 'USDC') {
+    return failWith(
+      'Native CCTP bridging supports USDC only',
+      'validation',
+      `${fromEntry.name} routes use the raw CCTP contracts, which burn/mint USDC.`,
+    )
+  }
+  const wallet = await walletOn(config, address, fromEntry)
+  if (!('walletClient' in wallet)) return wallet
+  const { walletClient, account, viem } = wallet
+
+  // Authorize Circle's standard-transfer fee from the live schedule: a maxFee
+  // below the current fee means Iris never attests and the burn strands.
+  const amountForFee = buildDepositForBurnCalldata({
+    amount,
+    destinationDomain: toEntry.cctpDomain,
+    mintRecipient: account,
+    burnToken: fromEntry.usdc,
+    maxFee: 0n,
+  }).amountBase
+  if (amountForFee <= 0n) {
+    return failWith('Amount must be greater than zero', 'validation')
+  }
+  const maxFee = await fetchStandardMaxFee(
+    fromEntry.cctpDomain,
+    toEntry.cctpDomain,
+    amountForFee,
+    fromEntry.testnet,
+  )
+  const { data: burnData, amountBase } = buildDepositForBurnCalldata({
+    amount,
+    destinationDomain: toEntry.cctpDomain,
+    mintRecipient: account,
+    burnToken: fromEntry.usdc,
+    maxFee,
+  })
+
+  const publicClient = createPublicClient({ chain: viem, transport: http(fromEntry.rpcUrl) })
+  const allowance = (await publicClient.readContract({
+    address: fromEntry.usdc,
+    abi: erc20ApproveAbi,
+    functionName: 'allowance',
+    args: [account, fromEntry.tokenMessenger],
+  })) as bigint
+
+  if (allowance < amountBase) {
+    const approveHash = await walletClient.sendTransaction({
+      account,
+      chain: viem,
+      to: fromEntry.usdc,
+      data: buildApproveCalldata(fromEntry.tokenMessenger, amountBase),
+    })
+    await publicClient.waitForTransactionReceipt({ hash: approveHash })
+  }
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    chain: viem,
+    to: fromEntry.tokenMessenger,
+    data: burnData,
+  })
+
+  return {
+    ok: true,
+    hash,
+    explorerUrl: explorerFor(hash, viem),
+    data: {
+      native: true,
+      state: 'burned',
+      steps: [{ name: 'Burn', txHash: hash, state: 'success' }],
+      srcDomain: fromEntry.cctpDomain,
+      dstDomain: toEntry.cctpDomain,
+      fromKey: fromEntry.key,
+      toKey: toEntry.key,
+      note: `Standard CCTP transfer: once Circle attests (typically ~15 min), claim the USDC on ${toEntry.name} (claim_bridge).`,
+    },
   }
 }
 
@@ -405,9 +597,14 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           // GUARD: spend caps (per-tx + rolling daily).
           const capErr = checkSpendCaps(amount, address)
           if (capErr) return capErr
-          // GUARD: chain resolved via registry (swap stays on its chain; Arc default).
-          const swapChain = resolveChain(input.chain)
+          // GUARD: chain resolved via registry (swap stays on its chain; Arc
+          // default). Strict: unknown/disabled chains fail instead of
+          // silently swapping on Arc Testnet.
+          const swapEntry = requireActiveChain(input.chain, 'chain')
+          if (!('chainId' in swapEntry)) return swapEntry
+          const swapChain = resolveChain(swapEntry.chainId)
           const chain = swapChain.appKit
+          if (!chain) return appKitUnsupported(swapChain.entry.name)
           // GUARD: slippage clamp, per-network (App Kit computes its own minOut,
           // so we enforce the cap on the REQUESTED value and surface it). This
           // MUST go under `config` — a top-level slippageBps is ignored by the
@@ -440,9 +637,14 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const capErr = checkSpendCaps(amount, address)
           if (capErr) return capErr
           // GUARD: resolve BOTH chains via the registry (CCTP V2 domains, not
-          // opaque string enums). Reject same-chain bridges.
-          const fromEntry = resolveChain(input.fromChain).entry
-          const toEntry = resolveChain(input.toChain).entry
+          // opaque string enums). Strict + ACTIVE-only: unknown refs and
+          // disabled mainnet rows fail validation. Reject same-chain bridges.
+          const fromRes = requireActiveChain(input.fromChain, 'source chain')
+          if (!('chainId' in fromRes)) return fromRes
+          const toRes = requireActiveChain(input.toChain, 'destination chain')
+          if (!('chainId' in toRes)) return toRes
+          const fromEntry = fromRes
+          const toEntry = toRes
           if (fromEntry.chainId === toEntry.chainId) {
             return failWith(
               'Source and destination chains are the same',
@@ -450,8 +652,23 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
               'Pick two different chains to bridge between.',
             )
           }
-          const fromChain = toAppKitChain(fromEntry) ?? 'Arc_Testnet'
-          const toChain = toAppKitChain(toEntry) ?? 'Arc_Testnet'
+          const fromChain = toAppKitChain(fromEntry)
+          const toChain = toAppKitChain(toEntry)
+          if (!fromChain || !toChain) {
+            // App Kit can't route this pair (Arc mainnet end) — burn via the
+            // raw CCTP V2 contracts instead. Claiming happens on the
+            // destination once Circle attests (claim_bridge tool).
+            const r = await executeNativeCctpBridge({
+              config,
+              address,
+              fromEntry,
+              toEntry,
+              token: String(input.token ?? 'USDC'),
+              amount,
+            })
+            if (r.ok) recordDailySpend(address, parseAmount(amount))
+            return r
+          }
           const r = await kit.bridge({
             from: { adapter, chain: fromChain },
             to: { adapter, chain: toChain },
@@ -477,7 +694,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           return {
             ok: true,
             hash,
-            explorerUrl: anyHash?.explorerUrl ?? explorerFor(hash, fromEntry.isArc ? arcTestnet : toViemChain(fromEntry)),
+            explorerUrl: anyHash?.explorerUrl ?? explorerFor(hash, fromEntry.chainId === arcTestnet.id ? arcTestnet : toViemChain(fromEntry)),
             data: {
               state: r.state,
               steps,
@@ -493,8 +710,11 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           const amount = String(input.amount ?? '0')
           const token = String(input.token ?? 'USDC')
           // GUARD: chain resolved via registry; derive the token contract so we
-          // can reject sends to the token contract itself.
-          const sendChain = resolveChain(input.chain)
+          // can reject sends to the token contract itself. Strict: unknown or
+          // disabled chains fail instead of falling back to Arc Testnet.
+          const sendEntry = requireActiveChain(input.chain, 'chain')
+          if (!('chainId' in sendEntry)) return sendEntry
+          const sendChain = resolveChain(sendEntry.chainId)
           const tokenUpper = token.toUpperCase()
           const tokenAddress =
             tokenUpper === 'USDC'
@@ -510,6 +730,7 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           // GUARD: spend caps.
           const capErr = checkSpendCaps(amount, address)
           if (capErr) return capErr
+          if (!sendChain.appKit) return appKitUnsupported(sendChain.entry.name)
           const r = await kit.send({
             from: { adapter, chain: sendChain.appKit },
             to: recip.address,
@@ -521,6 +742,82 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
           if (!hash) return failWith('Send returned no transaction hash', 'upstream', 'The wallet adapter did not produce a tx. Retry.')
           recordDailySpend(address, parseAmount(amount))
           return { ok: true, hash, explorerUrl: r.explorerUrl ?? explorerFor(hash, sendChain.viem) }
+        }
+
+        if (tool === 'claim_bridge') {
+          // Mint the USDC on the destination chain of a native CCTP bridge:
+          // fetch Circle's attestation for the burn tx, then sign
+          // receiveMessage on the destination MessageTransmitter.
+          const srcRes = requireActiveChain(input.fromChain, 'source chain')
+          if (!('chainId' in srcRes)) return srcRes
+          const dstRes = requireActiveChain(input.toChain, 'destination chain')
+          if (!('chainId' in dstRes)) return dstRes
+          const src = srcRes
+          const dst = dstRes
+          const txHash = String(input.txHash ?? '')
+          if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+            return failWith('Invalid burn transaction hash', 'validation', 'Pass the 0x… hash of the bridge burn transaction.')
+          }
+          let iris
+          try {
+            iris = await fetchIrisMessage(src.cctpDomain, txHash, src.testnet)
+          } catch (e) {
+            return failWith(
+              'Could not reach the Circle attestation API',
+              'network',
+              e instanceof Error ? e.message : 'Retry in a moment.',
+            )
+          }
+          const message = iris?.message
+          const attestation = iris?.attestation
+          // Ready when the attestation exists. Do NOT require status
+          // 'complete': Iris reports 'pending_confirmations' with a usable
+          // attestation in the window get_bridge_status calls ready_to_mint.
+          if (!iris || !message || !attestation || attestation === 'PENDING') {
+            return failWith(
+              'Attestation not ready yet',
+              'timeout',
+              'Circle is still attesting the burn (standard transfers take ~15 min). Check get_bridge_status and try again once it reads ready_to_mint.',
+            )
+          }
+          // The attested message names its destination. Refuse a mismatched
+          // claim: signing on the wrong chain only burns gas on a revert.
+          const decodedDst = Number(iris.decodedMessage?.destinationDomain)
+          if (Number.isFinite(decodedDst) && decodedDst !== dst.cctpDomain) {
+            const actual = getChainByDomain(decodedDst, { testnet: src.testnet })
+            return failWith(
+              `This burn is destined for ${actual?.name ?? `CCTP domain ${decodedDst}`}, not ${dst.name}`,
+              'validation',
+              'Call claim_bridge with the chain the bridge was actually sent to.',
+            )
+          }
+          const wallet = await walletOn(config, address, dst)
+          if (!('walletClient' in wallet)) return wallet
+          const data = buildReceiveMessageCalldata(message as Hex, attestation as Hex)
+          // Preflight the mint: a used nonce (already claimed) or a
+          // not-yet-valid attestation reverts here instead of costing gas.
+          const dstPublic = createPublicClient({ chain: wallet.viem, transport: http(dst.rpcUrl) })
+          try {
+            await dstPublic.call({ account: wallet.account, to: dst.messageTransmitter, data })
+          } catch {
+            return failWith(
+              'Claim would revert on the destination chain',
+              'validation',
+              'The USDC was most likely already claimed. Check the destination balance before retrying.',
+            )
+          }
+          const hash = await wallet.walletClient.sendTransaction({
+            account: wallet.account,
+            chain: wallet.viem,
+            to: dst.messageTransmitter,
+            data,
+          })
+          return {
+            ok: true,
+            hash,
+            explorerUrl: explorerFor(hash, wallet.viem),
+            data: { claimed: true, fromKey: src.key, toKey: dst.key, burnTx: txHash },
+          }
         }
 
         // Tools that build their own calldata server-side
@@ -537,29 +834,11 @@ export function useTxExecutor(): (e: ExecInput) => Promise<TxExecResult> {
             input.amount ?? input.amountA ?? input.budgetUsdc ?? input.amountB
           const capErr = checkSpendCaps(capAmount, address)
           if (capErr) return capErr
-          const connection =
-            config.state.connections.get(config.state.current ?? '') ??
-            Array.from(config.state.connections.values())[0]
-          const connector = connection?.connector ?? config.connectors[0]
-          if (!connector) return failWith('No wallet connector', 'wallet_not_connected', 'Connect a wallet first.')
-          const provider = (await connector.getProvider()) as {
-            request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
-          }
-          try {
-            await provider.request({
-              method: 'wallet_switchEthereumChain',
-              params: [{ chainId: numberToHex(arcTestnet.id) }],
-            })
-          } catch {
-            // already on chain or rejected
-          }
-          const account = (address ?? connection?.accounts[0]) as Address | undefined
-          if (!account) return failWith('No active wallet account', 'wallet_not_connected', 'Connect or unlock your wallet.')
-          const walletClient = createWalletClient({
-            account,
-            chain: arcTestnet,
-            transport: custom(provider as unknown as Parameters<typeof custom>[0]),
-          })
+          // These builders are Arc-Testnet-only (position manager / pools
+          // live there); reuse the shared wallet acquisition helper.
+          const arcWallet = await walletOn(config, address, resolveChainRef('arc-testnet'))
+          if (!('walletClient' in arcWallet)) return arcWallet
+          const { walletClient } = arcWallet
           const res = await fetch('/api/tools', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
