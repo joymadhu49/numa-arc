@@ -25,7 +25,7 @@ export function TrendingCard({ data }: { data: TrendingCardData }) {
       <CardShell icon={<TrendingUp className="h-4 w-4" />} title="Trending">
         <CardEmpty
           title="Nothing trending right now"
-          hint="Market data may be quiet or temporarily unavailable — ask again in a moment."
+          hint="Market data may be quiet or temporarily unavailable. Ask again in a moment."
         />
       </CardShell>
     )

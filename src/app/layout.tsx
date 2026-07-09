@@ -19,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: 'Numa',
-  description: 'Numa — the stablecoin DeFi copilot on Arc.',
+  description: 'The stablecoin DeFi copilot on Arc.',
 }
 
 export const viewport: Viewport = {

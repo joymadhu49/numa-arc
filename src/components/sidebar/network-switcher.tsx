@@ -3,22 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Check, Search, Zap, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { CHAINS, getChain, type ChainEntry } from '@/chains/registry'
+import { ACTIVE_CHAINS, CHAINS, getChain, type ChainEntry } from '@/chains/registry'
+import { useTestnetPrefs } from '@/lib/network-prefs'
 import { ChainLogo } from '@/components/ui/chain-logo'
 import { switchWalletChain, isUserRejection } from '@/lib/chain-switch'
 import { classifyError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 /**
- * Chains the connected wallet can actually switch to right now (testnets that
- * the app routes). Mainnet rows are shown disabled with a "soon" tag.
+ * Chains the connected wallet can actually switch to right now — the ACTIVE
+ * registry set (testnets always; mainnets too when NEXT_PUBLIC_ENABLE_MAINNET
+ * is set). Inactive rows are shown disabled with a "soon" tag. Switching uses
+ * raw EIP-1193 wallet_switchEthereumChain + 4902 add fallback, so any active
+ * chain the wallet can add is selectable.
  */
-// Testnet-only (mainnet-ready): every ACTIVE (testnet) registry chain is
-// switchable. Keys MUST match registry slugs (hyphenated, e.g. 'arc-testnet').
-// Switching uses raw EIP-1193 wallet_switchEthereumChain + 4902 add fallback,
-// so any active chain the wallet can add is selectable. Mainnet rows stay
-// disabled with a "soon" tag.
-const SWITCHABLE = CHAINS.filter((c) => c.testnet).map((c) => c.key)
+const SWITCHABLE = ACTIVE_CHAINS.map((c) => c.key)
 
 type Eip1193Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
@@ -121,7 +120,11 @@ export function NetworkSwitcher() {
 
   const active = activeChainId ? getChain(activeChainId) : null
 
-  // Registry-driven: all chains, grouped, filtered by query.
+  // Registry-driven: all chains, grouped, filtered by query. Testnets are
+  // hidden by default when mainnet is enabled (Settings → Networks → "Show
+  // testnets" opts back in) — keyboard nav follows automatically since
+  // flatSwitchable derives from this.
+  const { hideTestnets } = useTestnetPrefs()
   const all = useMemo(() => [...CHAINS] as ChainEntry[], [])
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -129,9 +132,13 @@ export function NetworkSwitcher() {
       ? all.filter((e) => e.name.toLowerCase().includes(q) || e.key.toLowerCase().includes(q))
       : all
     const mainnet = rows.filter((e) => !e.testnet)
-    const testnet = rows.filter((e) => e.testnet)
+    // Hidden testnets: still show the chain the wallet is CURRENTLY on, or
+    // the active row would vanish from its own picker with no way back.
+    const testnet = rows.filter(
+      (e) => e.testnet && (!hideTestnets || e.chainId === activeChainId),
+    )
     return { mainnet, testnet }
-  }, [all, query])
+  }, [all, query, hideTestnets, activeChainId])
 
   // Flat list of switchable rows for keyboard navigation.
   const flatSwitchable = useMemo(

@@ -34,19 +34,21 @@ export function SwapPreviewCard({
   action,
   summary,
   details,
-  network = 'Arc Testnet',
+  network,
   confirmSlot,
   waiting,
-  note = 'Non-custodial — you review and approve in your wallet.',
+  note = 'Non-custodial. You review and approve in your wallet.',
 }: SwapPreviewCardProps) {
   return (
     <CardShell
       icon={<Repeat className="h-4 w-4" />}
       title={action}
       right={
-        <span className="rounded-full border border-border-c bg-bg px-2 py-0.5 text-2xs font-medium text-muted-fg">
-          {network}
-        </span>
+        network ? (
+          <span className="rounded-full border border-border-c bg-bg px-2 py-0.5 text-2xs font-medium text-muted-fg">
+            {network}
+          </span>
+        ) : undefined
       }
     >
       <div className="px-4 py-3">
@@ -63,7 +65,8 @@ export function SwapPreviewCard({
           ) : null}
         </div>
 
-        {/* meta: detail rows when provided, else a subtle fallback line */}
+        {/* meta: detail rows only when provided (no hardcoded slippage — it
+            would misstate the value the user is about to approve) */}
         {details && details.length > 0 ? (
           <div className="mt-3 space-y-1 border-t border-border-c pt-2.5">
             {details.map((d, i) => (
@@ -73,9 +76,7 @@ export function SwapPreviewCard({
               </div>
             ))}
           </div>
-        ) : (
-          <div className="mt-3 text-2xs text-muted-fg">Gas in USDC · slippage ≤0.5%</div>
-        )}
+        ) : null}
 
         {/* security note */}
         <div className="mt-3 flex items-center gap-1.5 text-2xs text-muted-fg">

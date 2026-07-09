@@ -26,7 +26,7 @@ const TxPreview = dynamic(
 import { WalletPill } from '@/components/sidebar/wallet-pill'
 import { NetworkSwitcher } from '@/components/sidebar/network-switcher'
 import { ChainLogo } from '@/components/ui/chain-logo'
-import { getActiveChains, getChain } from '@/chains/registry'
+import { getActiveChains, getChain, resolveChainRef } from '@/chains/registry'
 import { isSigningTool } from '@/ai/tools'
 import { classifyError } from '@/lib/errors'
 import { switchWalletChain } from '@/lib/chain-switch'
@@ -36,6 +36,8 @@ import {
   saveConversation,
 } from '@/lib/chat-history'
 import { useTxTracker } from '@/lib/tx-tracker'
+import { useTestnetPrefs } from '@/lib/network-prefs'
+import { cn } from '@/lib/utils'
 import { TxIndicator } from './tx-indicator'
 import { toast } from 'sonner'
 
@@ -91,8 +93,8 @@ function ConnectPrompt({
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-fg">
           {needsConnect
-            ? 'Connect a wallet to start a secure session — it’s free and moves no funds.'
-            : 'Your wallet is connected — sign a quick message to start your session. It’s free and moves no funds.'}
+            ? 'Connect a wallet to start a secure session. It is free and moves no funds.'
+            : 'Your wallet is connected. Sign a quick message to start your session. It is free and moves no funds.'}
         </p>
         <div className="mt-2.5 flex flex-wrap gap-2">
           {!auth.isConnected ? (
@@ -187,6 +189,7 @@ function ChatError({ error, onRetry }: { error: Error; onRetry: () => void }) {
 
 export function Chat() {
   const auth = useAuth()
+  const { hideTestnets } = useTestnetPrefs()
   const { address, signedIn } = auth
   const execTx = useTxExecutor()
   const buildPreview = useTxPreview()
@@ -370,13 +373,19 @@ export function Chat() {
           // the toast dismisses or the in-chat card scrolls away.
           trackTx({
             hash: result.hash,
-            chainKey: String(args.chain ?? args.fromChain ?? 'arc-testnet'),
+            // Normalize through the registry: the model may pass an App Kit
+            // enum ("Base_Sepolia") which getChain() can't resolve — the
+            // tracker would then never find a receipt and sit "pending".
+            // claim_bridge broadcasts its mint on the DESTINATION chain.
+            chainKey: resolveChainRef(
+              toolName === 'claim_bridge' ? args.toChain : (args.chain ?? args.fromChain),
+            ).key,
             action: toolName,
             explorerUrl: result.explorerUrl,
           })
         }
         toast.success('Transaction submitted', {
-          description: 'Broadcast to the network — track progress in the chat.',
+          description: 'Broadcast to the network. Track progress in the chat.',
           action: result.explorerUrl
             ? {
                 label: 'Explorer',
@@ -483,17 +492,30 @@ export function Chat() {
             {empty ? (
               <div className="flex flex-col items-start gap-4 pt-4 sm:gap-5 sm:pt-8">
                 <NumaAvatar size={48} />
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold tracking-tight text-fg sm:text-2xl">
-                    Welcome to Numa — your stablecoin copilot on Arc
-                  </h1>
-                  <span className="inline-flex items-center rounded-full border border-border-c bg-muted-bg/40 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-fg">
-                    Testnet
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
+                      Welcome to Numa
+                    </h1>
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium uppercase tracking-wide',
+                        hideTestnets
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-border-c bg-muted-bg/40 text-muted-fg',
+                      )}
+                    >
+                      {hideTestnets ? 'Mainnet' : 'Testnet'}
+                    </span>
+                  </div>
+                  <p className="text-base font-medium text-muted-fg">
+                    Your stablecoin copilot on Arc
+                  </p>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-fg">
-                  Ask in plain English to check balances, swap, send, bridge USDC across testnets,
-                  and find yields. Every transaction previews and simulates before you sign.
+                  Ask in plain English to check balances, swap, send, bridge USDC across{' '}
+                  {hideTestnets ? 'chains' : 'testnets'}, and find yields. Every transaction
+                  previews and simulates before you sign.
                 </p>
                 <div className="w-full rounded-xl border border-border-c bg-card px-4 py-3">
                   <p
@@ -507,12 +529,14 @@ export function Chat() {
                     aria-labelledby="numa-networks-heading"
                     className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-fg sm:gap-x-4 sm:text-sm"
                   >
-                    {getActiveChains().map((c) => (
-                      <li key={c.key} className="inline-flex items-center gap-2">
-                        <ChainLogo src={c.logo} name={c.name} chainKey={c.key} size={18} />
-                        <span className="break-words">{c.name}</span>
-                      </li>
-                    ))}
+                    {getActiveChains()
+                      .filter((c) => !hideTestnets || !c.testnet)
+                      .map((c) => (
+                        <li key={c.key} className="inline-flex items-center gap-2">
+                          <ChainLogo src={c.logo} name={c.name} chainKey={c.key} size={18} />
+                          <span className="break-words">{c.name}</span>
+                        </li>
+                      ))}
                   </ul>
                 </div>
                 <ExampleChips onPick={(p) => submit(p)} disabled={loading} />
@@ -611,7 +635,8 @@ export function Chat() {
           </form>
           <p className="mt-2 text-center text-2xs leading-relaxed text-muted-fg">
             Numa can make mistakes and is not financial advice. Always review transactions before
-            signing. Testnet only.
+            signing.{' '}
+            {hideTestnets ? 'Mainnet transactions move real funds.' : 'Testnet only.'}
           </p>
         </div>
       </div>

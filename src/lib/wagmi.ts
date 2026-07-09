@@ -13,11 +13,12 @@ const connectors: CreateConnectorFn[] = walletConnectProjectId
     ]
   : [injected({ shimDisconnect: true })]
 
-// Derive the active (testnet) chains from the registry. Arc Testnet MUST be
-// first so it is the default chain. We reuse the concrete `arcTestnet` export
-// for the Arc entry and build the rest via toViemChain.
+// Derive the active chains from the registry. Arc Testnet MUST be first so it
+// is the default chain. We reuse the concrete `arcTestnet` export for the Arc
+// TESTNET entry (match by chainId, NOT isArc — Arc mainnet is its own chain)
+// and build the rest via toViemChain.
 const activeViemChains: Chain[] = ACTIVE_CHAINS.map((entry) =>
-  entry.isArc ? arcTestnet : toViemChain(entry),
+  entry.chainId === arcTestnet.id ? arcTestnet : toViemChain(entry),
 )
 const arcFirst: Chain[] = [
   arcTestnet,

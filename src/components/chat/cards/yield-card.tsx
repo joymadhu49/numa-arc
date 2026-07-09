@@ -25,7 +25,7 @@ export function YieldCard({ data }: { data: YieldCardData }) {
       <CardShell icon={<Sprout className="h-4 w-4" />} title="Yield">
         <CardEmpty
           title="No matching pools"
-          hint="Try widening the search — e.g. “best USDC yields” without a chain or APY filter."
+          hint="Try widening the search, e.g. “best USDC yields” without a chain or APY filter."
         />
       </CardShell>
     )

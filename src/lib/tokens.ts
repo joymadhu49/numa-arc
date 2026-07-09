@@ -15,7 +15,7 @@
  */
 
 import type { Address } from 'viem'
-import { ACTIVE_CHAINS, getChain } from '@/chains/registry'
+import { ACTIVE_CHAINS, MAINNET_ENABLED, getChain } from '@/chains/registry'
 
 export const ARC_TESTNET_CHAIN_ID = 5042002 as const
 
@@ -69,6 +69,25 @@ const ARC_TOKENS: readonly TokenInfo[] = [
     coingeckoId: 'euro-coin',
   },
 ]
+
+// Arc MAINNET: USDC uses the same 0x3600… precompile surface as testnet
+// (6-decimal ERC-20 reads; native gas via eth_getBalance is 18-decimal).
+// EURC is omitted until Circle publishes the official Arc-mainnet address.
+// Gated on the mainnet flag so testnet-only deployments never resolve it.
+const ARC_MAINNET_TOKENS: readonly TokenInfo[] = (() => {
+  const arc = getChain('arc')
+  if (!MAINNET_ENABLED || !arc || arc.testnet) return []
+  return [
+    {
+      symbol: 'USDC' as const,
+      name: 'USD Coin',
+      decimals: 6,
+      address: arc.usdc,
+      chainId: arc.chainId,
+      coingeckoId: 'usd-coin',
+    },
+  ]
+})()
 
 // ---------------------------------------------------------------------------
 // Registry-derived ERC-20 stablecoin entries for the OTHER active chains.
@@ -164,12 +183,20 @@ const EXTRA_TOKENS: readonly TokenInfo[] = [
  * Token registry. Keyed implicitly by (chainId, symbol).
  * Arc native entries first (default chain), then registry-derived ERC-20
  * stablecoins for other active chains, then mainnet display extras.
+ * Deduped by (chainId, symbol) — with mainnet enabled the registry-derived
+ * rows (chainId 1, 8453) would otherwise collide with EXTRA_TOKENS.
  */
-export const TOKENS: readonly TokenInfo[] = [
-  ...ARC_TOKENS,
-  ...REGISTRY_TOKENS,
-  ...EXTRA_TOKENS,
-]
+export const TOKENS: readonly TokenInfo[] = (() => {
+  const seen = new Set<string>()
+  return [...ARC_TOKENS, ...ARC_MAINNET_TOKENS, ...REGISTRY_TOKENS, ...EXTRA_TOKENS].filter(
+    (t) => {
+      const k = `${t.chainId}:${t.symbol}`
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    },
+  )
+})()
 
 /** Lookup a token by chain + symbol. */
 export function getToken(chainId: number, symbol: TokenSymbol): TokenInfo | undefined {

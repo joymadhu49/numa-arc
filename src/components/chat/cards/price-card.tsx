@@ -16,7 +16,7 @@ export function PriceCard({ data }: { data: PriceCardData }) {
       <CardShell icon={<LineChart className="h-4 w-4" />} title="Prices">
         <CardEmpty
           title="No prices found"
-          hint="The token may not be listed yet — try a different symbol, e.g. “price of USDC” or “ETH price”."
+          hint="The token may not be listed yet. Try a different symbol, e.g. “price of USDC” or “ETH price”."
         />
       </CardShell>
     )
