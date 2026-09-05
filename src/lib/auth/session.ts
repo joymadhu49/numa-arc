@@ -17,13 +17,20 @@
 
 import crypto from 'crypto'
 
-const SECRET = process.env.AUTH_SECRET
-
-if (process.env.NODE_ENV === 'production' && (!SECRET || SECRET.length < 32)) {
-  throw new Error('AUTH_SECRET must be set to a long random value in production')
+/**
+ * Resolve the HMAC secret lazily (per call) instead of at module load.
+ * On Cloudflare Workers, secrets are runtime bindings that are NOT present
+ * during `next build` page-data collection, so a module-level throw would
+ * break the build. Production still fails closed: the first request that
+ * needs the secret throws if it is missing/short.
+ */
+function getHmacSecret(): string {
+  const secret = process.env.AUTH_SECRET
+  if (process.env.NODE_ENV === 'production' && (!secret || secret.length < 32)) {
+    throw new Error('AUTH_SECRET must be set to a long random value in production')
+  }
+  return secret ?? 'numa-dev-insecure-secret-set-AUTH_SECRET-in-env'
 }
-
-const HMAC_SECRET = SECRET ?? 'numa-dev-insecure-secret-set-AUTH_SECRET-in-env'
 
 /** Session cookie name (httpOnly). */
 export const SESSION_COOKIE = 'numa_session'
@@ -33,7 +40,7 @@ const NONCE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 export const SESSION_MAX_AGE_S = Math.floor(SESSION_TTL_MS / 1000)
 
 function hmac(input: string): string {
-  return crypto.createHmac('sha256', HMAC_SECRET).update(input).digest('base64url')
+  return crypto.createHmac('sha256', getHmacSecret()).update(input).digest('base64url')
 }
 
 function safeEqual(a: string, b: string): boolean {
