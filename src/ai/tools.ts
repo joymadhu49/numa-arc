@@ -19,7 +19,20 @@
 
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
+import { isAddress } from 'viem'
 import type { Address, Hex } from 'viem'
+
+/**
+ * Pick a usable wallet address: a valid model-supplied override, else the
+ * connected/session address. Models (notably OpenAI) often send `""` for an
+ * optional string field; `??` would keep that empty string and the tool would
+ * wrongly report "no wallet". Treat anything that is not a real address as absent.
+ */
+function pickAddress(override: string | undefined, fallback: string | undefined): Address | undefined {
+  if (override && isAddress(override)) return override as Address
+  if (fallback && isAddress(fallback)) return fallback as Address
+  return undefined
+}
 
 import { getPrices } from '@/ai/tools/prices'
 import { getYield } from '@/ai/tools/yield'
@@ -366,7 +379,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
       address: z.string().optional().describe('Optional address override.'),
     }),
     execute: async ({ address }) => {
-      const resolved = (address ?? ctx.address) as Address | undefined
+      const resolved = pickAddress(address, ctx.address)
       if (!resolved) {
         return { ok: false as const, error: 'No wallet address available. Connect a wallet.' }
       }
@@ -382,7 +395,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
       chain: z.string().optional().describe('Chain enum. Default Arc_Testnet.'),
     }),
     execute: async ({ address }) => {
-      const resolved = (address ?? ctx.address) as Address | undefined
+      const resolved = pickAddress(address, ctx.address)
       if (!resolved) {
         return { ok: false as const, error: 'No wallet address available. Connect a wallet.' }
       }
@@ -414,7 +427,7 @@ export function buildNumaTools(ctx: NumaToolContext = {}): NumaTools {
       chain: z.string().optional().describe('Chain enum. Default Arc_Testnet.'),
     }),
     execute: async ({ to, data, value, from }) => {
-      const fromAddr = (from ?? ctx.address) as Address | undefined
+      const fromAddr = pickAddress(from, ctx.address)
       if (!fromAddr) {
         return { ok: false as const, error: 'No "from" address available. Connect a wallet.' }
       }
@@ -554,7 +567,7 @@ const getPortfolioTool = tool({
     address: z.string().optional().describe('Optional address override.'),
   }),
   execute: async ({ address }) => {
-    const resolved = address as Address | undefined
+    const resolved = pickAddress(address, undefined)
     if (!resolved) {
       return { ok: false as const, error: 'No wallet address available. Connect a wallet.' }
     }

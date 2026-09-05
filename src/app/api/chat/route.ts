@@ -14,8 +14,11 @@ import { verifySessionToken, SESSION_COOKIE } from '@/lib/auth/session'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** Strong 2026 tool-use fallback (overridable via OPENROUTER_MODEL env). */
-const FALLBACK_MODEL = 'anthropic/claude-sonnet-4.6'
+/** Strong 2026 tool-use fallback (overridable via OPENROUTER_MODEL env).
+ * Anthropic models via OpenRouter are rejected with 403 "provider Terms Of
+ * Service" when the request egresses from Bangladesh (our Cloudflare colo), so
+ * the default is an OpenAI model. */
+const FALLBACK_MODEL = 'openai/gpt-5.4-mini'
 
 /** Max number of agentic steps (tool round-trips) per request. */
 const MAX_STEPS = 6
