@@ -17,3 +17,7 @@ PLAN.md
 
 # Claude Code local runtime
 .claude/
+
+# Cloudflare / OpenNext build output
+.open-next
+.wrangler

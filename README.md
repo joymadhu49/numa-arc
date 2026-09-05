@@ -176,3 +176,20 @@ A `vercel.json` in the repo already sets the install command, build command, and
 ## License
 
 MIT
+
+## Deploying (Cloudflare Workers)
+
+Production runs on Cloudflare Workers via the OpenNext adapter (`wrangler.jsonc`, `open-next.config.ts`).
+
+```bash
+npm run cf:build      # next build + OpenNext bundle → .open-next/
+npm run cf:deploy     # build + deploy (uses your `wrangler login` OAuth session)
+npm run cf:preview    # build + run the Worker locally in workerd
+```
+
+- `NEXT_PUBLIC_*` values are inlined at build time. Locally they come from `.env` / `.env.production.local`;
+  in CI they are set as **build variables** on the Worker (Cloudflare dashboard → numa-arc → Settings → Builds).
+- Server-side secrets (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `AUTH_SECRET`, `DEFILLAMA_API`) live in the
+  Worker: `npx wrangler secret put NAME` or `npx wrangler secret bulk secrets.json`.
+- Deploys are triggered by Cloudflare **Workers Builds** (Git integration) on every push to `main`;
+  non-production branches get preview builds. Build command: `npx opennextjs-cloudflare build`, deploy: `npx wrangler deploy`.
